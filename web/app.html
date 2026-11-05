@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Mars Sandbox: hot-loaded Wasm behaviors</title>
+<style>
+  :root { --bg:#120a07; --panel:rgba(18,10,7,.86); --ink:#f3e6dc; --dim:#b89b8a; --accent:#ff9f5a; --ok:#6fe3a0; --bad:#ff6b6b; --warn:#ffd166; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:14px/1.4 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; overflow:hidden; }
+  #scene { position:fixed; top:0; left:0; width:100vw; height:100vh; touch-action:none; display:block; }
+  #hud { position:fixed; left:0; right:0; bottom:0; max-height:55vh; display:flex; flex-direction:column; background:var(--panel); backdrop-filter:blur(10px); border-top:1px solid rgba(255,159,90,.25); transition:max-height .25s; }
+  #hud.collapsed { max-height:44px; }
+  #hud.collapsed #body { display:none; }
+  #bar { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; user-select:none; }
+  #bar .pill { font-size:12px; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.08); color:var(--dim); white-space:nowrap; }
+  #bar .pill.running { color:var(--ok); } #bar .pill.loading { color:var(--warn); } #bar .pill.dead { color:var(--bad); }
+  #bar .grow { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  #body { overflow-y:auto; padding:0 12px 14px; }
+  h3 { margin:12px 0 6px; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { padding:7px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05); color:var(--ink); font-size:13px; cursor:pointer; }
+  .chip.sel { border-color:var(--accent); background:rgba(255,159,90,.18); }
+  .chip.danger { border-color:rgba(255,107,107,.5); }
+  .row { display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+  button.primary { background:var(--accent); color:#1a0d05; border:0; border-radius:10px; padding:9px 16px; font-weight:700; font-size:14px; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--dim); border:1px solid rgba(255,255,255,.14); border-radius:10px; padding:8px 12px; cursor:pointer; }
+  label.ghost { display:inline-block; background:transparent; color:var(--dim); border:1px solid rgba(255,255,255,.14); border-radius:10px; padding:8px 12px; cursor:pointer; }
+  input[type=file] { display:none; }
+  .prompt { font-style:italic; color:var(--dim); margin:4px 0 0; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:6px; }
+  .stat { background:rgba(255,255,255,.05); border-radius:8px; padding:6px 8px; }
+  .stat b { display:block; font-size:11px; color:var(--dim); font-weight:500; }
+  .stat span { font-variant-numeric:tabular-nums; }
+  .meter { height:6px; border-radius:3px; background:rgba(255,255,255,.1); overflow:hidden; margin-top:4px; }
+  .meter i { display:block; height:100%; background:var(--ok); width:100%; transition:width .3s; }
+  #log { font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:rgba(0,0,0,.35); border-radius:8px; padding:8px; max-height:120px; overflow-y:auto; white-space:pre-wrap; }
+  #log .host { color:var(--warn); } #log .mod { color:#9ad1ff; } #log .err { color:var(--bad); }
+  details { margin-top:8px; } summary { cursor:pointer; color:var(--dim); font-size:13px; }
+  pre.src { font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; background:rgba(0,0,0,.35); border-radius:8px; padding:8px; overflow:auto; max-height:260px; margin:6px 0 0; }
+  #hint { position:fixed; top:10px; left:10px; right:10px; text-align:center; font-size:12px; color:var(--dim); pointer-events:none; text-shadow:0 1px 2px #000; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="hint">drag to orbit · pinch to zoom · tap the ground to set a target</div>
+
+<div id="hud">
+  <div id="bar">
+    <span class="pill" id="state">no module</span>
+    <span class="grow" id="modname">Pick a behavior to hot-load</span>
+    <span class="pill" id="tick">— µs</span>
+    <span class="pill" id="bat">100%</span>
+  </div>
+  <div id="body">
+    <h3>Behavior modules (Wasm)</h3>
+    <div class="chips" id="chips"></div>
+    <p class="prompt" id="prompt"></p>
+    <div class="row">
+      <button class="primary" id="load">Hot-load into running world</button>
+      <button class="ghost" id="unload">Unload</button>
+      <label class="ghost">Load my own .wasm<input type="file" id="file" accept=".wasm,application/wasm"></label>
+    </div>
+
+    <h3>Rover</h3>
+    <div class="stats">
+      <div class="stat"><b>battery</b><span id="s-bat">100%</span><div class="meter"><i id="m-bat"></i></div></div>
+      <div class="stat"><b>solar</b><span id="s-solar">0 W</span></div>
+      <div class="stat"><b>speed</b><span id="s-speed">0.0 m/s</span></div>
+      <div class="stat"><b>position</b><span id="s-pos">0, 0</span></div>
+      <div class="stat"><b>tick budget</b><span id="s-budget">2.0 ms</span></div>
+      <div class="stat"><b>module imports</b><span id="s-imports">—</span></div>
+    </div>
+
+    <h3>Log</h3>
+    <div id="log"></div>
+
+    <details><summary>AssemblyScript source of the selected module</summary><pre class="src" id="src"></pre></details>
+    <details><summary>Host API (the whole attack surface)</summary><pre class="src" id="hostsrc"></pre></details>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+
+<script id="behaviors" type="application/json">/*__BEHAVIORS__*/</script>
+<script id="hostapi" type="text/plain">/*__HOST__*/</script>
+
+<!-- ===================== the sandbox worker ===================== -->
+<script id="worker-src" type="text/plain">
+// Runs inside a Web Worker. Owns exactly one Wasm behavior instance.
+// Has no access to the DOM, the scene, the network*, or the authoritative state:
+// it only sees the sensor snapshot the host sends each tick and returns requests.
+// (*the page's CSP also blocks fetch from here)
+const ALLOWED = new Set(["read","drive","set_arm","set_led","log","mem_get","mem_set"]);
+let instance = null, sensors = new Float32Array(14), mem = new Float32Array(64);
+let act = null;
+function freshActions(){ return { throttle:0, steer:0, arm:null, led:null, logs:[], mem:[] }; }
+const host = {
+  read: k => (k>=0 && k<14) ? sensors[k|0] : 0,
+  drive: (t,s) => { act.throttle = Math.max(-1,Math.min(1,t)); act.steer = Math.max(-1,Math.min(1,s)); },
+  set_arm: a => { act.arm = Math.max(0,Math.min(1,a)); },
+  set_led: (r,g,b) => { act.led = [r,g,b].map(v=>Math.max(0,Math.min(1,v))); },
+  log: (c,v) => { if (act.logs.length < 8) act.logs.push([c|0, v]); },
+  mem_get: i => (i>=0 && i<64) ? mem[i|0] : 0,
+  mem_set: (i,v) => { if (i>=0 && i<64) { mem[i|0]=v; act.mem.push([i|0, v]); } },
+};
+self.onmessage = async e => {
+  const m = e.data;
+  if (m.type === "load") {
+    try {
+      const mod = await WebAssembly.compile(m.bytes);
+      const imports = WebAssembly.Module.imports(mod);
+      for (const imp of imports) {
+        if (imp.module !== "host" || !ALLOWED.has(imp.name))
+          throw new Error("illegal import " + imp.module + "." + imp.name);
+      }
+      const exps = WebAssembly.Module.exports(mod).map(x=>x.name);
+      if (!exps.includes("tick") || !exps.includes("init")) throw new Error("module must export init() and tick(dt)");
+      mem.set(m.mem);
+      sensors.set(m.sensors);
+      instance = (await WebAssembly.instantiate(mod, { host })).exports;
+      act = freshActions();
+      instance.init();
+      self.postMessage({ type:"loaded", imports: imports.map(i=>i.module+"."+i.name), actions: act, memBytes: instance.memory ? instance.memory.buffer.byteLength : 0 });
+    } catch (err) { self.postMessage({ type:"error", msg: String(err.message || err) }); }
+  } else if (m.type === "tick" && instance) {
+    sensors.set(m.sensors);
+    act = freshActions();
+    const t0 = performance.now();
+    try { instance.tick(m.dt); }
+    catch (err) { self.postMessage({ type:"error", msg: "trap in tick(): " + String(err.message || err) }); return; }
+    act.ms = performance.now() - t0;
+    self.postMessage({ type:"actions", actions: act });
+  }
+};
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+// ------------------------------------------------------------------ data
+const BEHAVIORS = JSON.parse(document.getElementById("behaviors").textContent);
+document.getElementById("hostsrc").textContent = document.getElementById("hostapi").textContent.trim();
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+// ------------------------------------------------------------------ terrain
+const SIZE = 220, SEG = 160;
+function h(x, z) {                       // deterministic "Jezero-ish" heightfield
+  let y = 0;
+  y += Math.sin(x*0.021+1.3)*Math.cos(z*0.018-0.4)*4.5;
+  y += Math.sin(x*0.051-2.1)*Math.sin(z*0.047+0.9)*1.6;
+  y += Math.sin(x*0.17)*Math.cos(z*0.15)*0.35;
+  const r = Math.hypot(x-70, z+60); y -= 7*Math.exp(-((r-32)**2)/180) - 9*Math.exp(-(r*r)/900); // a crater
+  const rim = Math.hypot(x+75, z-70); y += 10*Math.exp(-((rim-20)**2)/120);                       // a hill ring
+  return y;
+}
+function normalAt(x, z) {
+  const e = 0.6, nx = h(x-e,z)-h(x+e,z), nz = h(x,z-e)-h(x,z+e);
+  return new THREE.Vector3(nx, 2*e, nz).normalize();
+}
+
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("scene"), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xc98b5e);
+scene.fog = new THREE.Fog(0xc98b5e, 90, 240);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 600);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enablePan = false; controls.minDistance = 5; controls.maxDistance = 90; controls.maxPolarAngle = Math.PI*0.49;
+controls.enableDamping = true;
+
+const hemi = new THREE.HemisphereLight(0xffd9b3, 0x5a2d16, 0.9); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffe3c4, 1.6); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); sun.shadow.camera.left = sun.shadow.camera.bottom = -40; sun.shadow.camera.right = sun.shadow.camera.top = 40;
+scene.add(sun); scene.add(sun.target);
+
+{
+  const g = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG); g.rotateX(-Math.PI/2);
+  const pos = g.attributes.position, col = new Float32Array(pos.count*3);
+  const c1 = new THREE.Color(0x9a4a2a), c2 = new THREE.Color(0xd08a5a), c3 = new THREE.Color(0x6e3a22);
+  for (let i=0;i<pos.count;i++) {
+    const x=pos.getX(i), z=pos.getZ(i), y=h(x,z); pos.setY(i,y);
+    const n = normalAt(x,z); const slope = 1-n.y;
+    const c = c1.clone().lerp(c2, THREE.MathUtils.clamp((y+6)/18,0,1)).lerp(c3, Math.min(1, slope*4));
+    col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b;
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(col,3)); g.computeVertexNormals();
+  const terrain = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1, metalness:0 }));
+  terrain.receiveShadow = true; terrain.name = "terrain"; scene.add(terrain);
+}
+
+// rocks (also the obstacle set)
+const rocks = [];
+{
+  const mat = new THREE.MeshStandardMaterial({ color:0x5b2f1c, roughness:1 });
+  let seed = 7; const rnd = () => (seed = (seed*16807)%2147483647)/2147483647;
+  for (let i=0;i<70;i++) {
+    const x=(rnd()-0.5)*190, z=(rnd()-0.5)*190, r=0.7+rnd()*1.9;
+    if (Math.hypot(x,z)<9 || Math.hypot(x,z+12)<6) continue;        // keep spawn + charger clear
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r,1), mat);
+    m.position.set(x, h(x,z)+r*0.45, z); m.rotation.set(rnd()*3,rnd()*3,rnd()*3); m.scale.y = 0.65+rnd()*0.4;
+    m.castShadow = true; scene.add(m); rocks.push({x,z,r});
+  }
+}
+
+// charging pad
+const CHARGER = { x:0, z:-12 };
+{
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(2.4,2.6,0.25,32), new THREE.MeshStandardMaterial({ color:0x2a3340, roughness:.6, metalness:.4 }));
+  pad.position.set(CHARGER.x, h(CHARGER.x,CHARGER.z)+0.12, CHARGER.z); pad.receiveShadow = true; scene.add(pad);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(2.2,0.08,8,48), new THREE.MeshStandardMaterial({ color:0x6fe3a0, emissive:0x6fe3a0, emissiveIntensity:1.5 }));
+  ring.rotation.x = Math.PI/2; ring.position.copy(pad.position).add(new THREE.Vector3(0,0.2,0)); scene.add(ring);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.1,3,8), new THREE.MeshStandardMaterial({ color:0xcccccc }));
+  mast.position.copy(pad.position).add(new THREE.Vector3(2.9,1.5,0)); scene.add(mast);
+}
+
+// target marker
+const target = { active:false, x:0, z:0 };
+const marker = new THREE.Mesh(new THREE.RingGeometry(0.9,1.3,32), new THREE.MeshBasicMaterial({ color:0xff9f5a, side:THREE.DoubleSide, transparent:true, opacity:.85 }));
+marker.rotation.x = -Math.PI/2; marker.visible = false; scene.add(marker);
+
+// ------------------------------------------------------------------ rover
+const rover = new THREE.Group(); scene.add(rover);
+const wheels = []; let arm1, arm2, led, panel;
+{
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.0,0.55,2.8), new THREE.MeshStandardMaterial({ color:0xd9d2c5, roughness:.5, metalness:.3 }));
+  body.position.y = 0.95; body.castShadow = true; rover.add(body);
+  panel = new THREE.Mesh(new THREE.BoxGeometry(2.6,0.05,2.2), new THREE.MeshStandardMaterial({ color:0x1b2a5a, roughness:.2, metalness:.8 }));
+  panel.position.y = 1.26; rover.add(panel);
+  const wm = new THREE.MeshStandardMaterial({ color:0x222222, roughness:.9 });
+  for (const sx of [-1.15,1.15]) for (const sz of [-1.05,0,1.05]) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,0.3,18), wm);
+    w.rotation.z = Math.PI/2; w.position.set(sx,0.42,sz); w.castShadow = true; rover.add(w); wheels.push(w);
+    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.5,0.12), wm); strut.position.set(sx*0.85,0.7,sz); rover.add(strut);
+  }
+  const mastM = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1.4,8), wm); mastM.position.set(-0.6,1.9,0.9); rover.add(mastM);
+  const cam = new THREE.Mesh(new THREE.BoxGeometry(0.45,0.25,0.3), new THREE.MeshStandardMaterial({ color:0x333333 })); cam.position.set(-0.6,2.65,0.95); rover.add(cam);
+  led = new THREE.Mesh(new THREE.SphereGeometry(0.14,12,12), new THREE.MeshStandardMaterial({ color:0x222222, emissive:0x3399ff, emissiveIntensity:2 }));
+  led.position.set(-0.6,2.85,0.95); rover.add(led);
+  // arm: two segments on a shoulder at the front
+  arm1 = new THREE.Group(); arm1.position.set(0.6,1.2,1.4); rover.add(arm1);
+  const seg1 = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.14,1.3), new THREE.MeshStandardMaterial({ color:0xe0b040 })); seg1.position.z = 0.65; arm1.add(seg1);
+  arm2 = new THREE.Group(); arm2.position.z = 1.3; arm1.add(arm2);
+  const seg2 = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.12,0.9), new THREE.MeshStandardMaterial({ color:0xe0b040 })); seg2.position.z = 0.45; arm2.add(seg2);
+  const scoop = new THREE.Mesh(new THREE.ConeGeometry(0.2,0.35,10), new THREE.MeshStandardMaterial({ color:0x888888 })); scoop.position.z = 0.95; scoop.rotation.x = Math.PI/2; arm2.add(scoop);
+}
+
+// ------------------------------------------------------------------ world state (authoritative, main thread)
+const W = { x:0, z:0, h:0, speed:0, bat:1.0, t:0, throttle:0, steer:0, armTarget:0.2, arm:0.2, mem:new Float32Array(64) };
+const MAX_SPEED = 2.6, TURN = 1.25, DAY = 240;           // 4-minute sol so you can watch solar fall off
+
+function sensorSnapshot() {
+  const rel = (tx,tz) => { const dx=tx-W.x, dz=tz-W.z; let b=Math.atan2(dx,dz)-W.h; while(b>Math.PI)b-=2*Math.PI; while(b<-Math.PI)b+=2*Math.PI; return [Math.hypot(dx,dz), b]; };
+  const [cd,cb] = rel(CHARGER.x, CHARGER.z);
+  const [td,tb] = target.active ? rel(target.x, target.z) : [99,0];
+  const ax = W.x+Math.sin(W.h)*3, az = W.z+Math.cos(W.h)*3;
+  const slope = Math.atan2(h(ax,az)-h(W.x,W.z), 3);
+  let od = 99, os = 0;
+  for (const r of rocks) {
+    const dx=r.x-W.x, dz=r.z-W.z, d=Math.hypot(dx,dz)-r.r; if (d>9) continue;
+    let b=Math.atan2(dx,dz)-W.h; while(b>Math.PI)b-=2*Math.PI; while(b<-Math.PI)b+=2*Math.PI;
+    if (Math.abs(b) < 0.6 && d < od) { od = Math.max(0,d); os = b >= 0 ? 1 : -1; }
+  }
+  return Float32Array.from([W.x, W.z, W.h, W.speed, W.bat, solarW(), W.t, cd, cb, slope, od, os, td, tb]);
+}
+function sunElev() { return Math.sin(W.t/DAY*2*Math.PI + 0.9); }
+function solarW() { return Math.max(0, sunElev())*120 * (1-0.3*Math.abs(Math.sin(W.h))); }
+
+function physics(dt) {
+  if (!module.enabled) { W.throttle *= 0.9; W.steer = 0; }
+  const want = W.throttle*MAX_SPEED;
+  W.speed += (want - W.speed) * Math.min(1, dt*3);
+  if (W.bat <= 0) W.speed *= 0.8;
+  W.h += W.steer * TURN * dt;
+  const nx = W.x + Math.sin(W.h)*W.speed*dt, nz = W.z + Math.cos(W.h)*W.speed*dt;
+  let blocked = false;
+  for (const r of rocks) if (Math.hypot(r.x-nx, r.z-nz) < r.r + 1.1) { blocked = true; break; }
+  if (!blocked && Math.abs(nx) < 105 && Math.abs(nz) < 105) { W.x = nx; W.z = nz; } else W.speed = 0;
+  // energy: 0.5 %/s at full throttle + idle draw, solar in, pad charging
+  const draw = (0.005*Math.abs(W.throttle)*(1+Math.max(0,sensorsCache[9])*2) + 0.0004) * dt;
+  const solarIn = solarW()/120 * 0.0012 * dt;
+  const onPad = Math.hypot(W.x-CHARGER.x, W.z-CHARGER.z) < 2.2 && Math.abs(W.speed) < 0.2;
+  W.bat = THREE.MathUtils.clamp(W.bat - draw + solarIn + (onPad ? 0.03*dt : 0), 0, 1);
+  W.arm += (W.armTarget - W.arm) * Math.min(1, dt*4);
+  W.t += dt;
+}
+
+// ------------------------------------------------------------------ module host (worker lifecycle, budgets, watchdog)
+const workerSrc = document.getElementById("worker-src").textContent;
+const workerURL = URL.createObjectURL(new Blob([workerSrc], { type:"text/javascript" }));
+const BUDGET_MS = 2.0, WATCHDOG_MS = 400, TICK_HZ = 20;
+const module = { worker:null, name:null, enabled:false, state:"none", inflight:false, lastSent:0, over:0, avgMs:0, imports:[] };
+let pendingSwap = null;
+
+const el = id => document.getElementById(id);
+function setState(s, label) { module.state = s; el("state").textContent = label || s; el("state").className = "pill " + s; }
+function logLine(cls, text) {
+  const L = el("log"); const d = document.createElement("div"); d.className = cls;
+  d.textContent = `[${W.t.toFixed(1).padStart(6)}s] ${text}`; L.appendChild(d);
+  while (L.children.length > 60) L.removeChild(L.firstChild); L.scrollTop = L.scrollHeight;
+}
+
+function loadModule(name, bytes, logNames) {
+  // Build the new instance *beside* the old one; swap only once init() succeeded.
+  const w = new Worker(workerURL);
+  setState("loading", "verifying + instantiating");
+  logLine("host", `loading "${name}" (${bytes.byteLength} bytes) in a fresh worker`);
+  const killer = setTimeout(() => { w.terminate(); setState(module.enabled ? "running" : "dead", module.enabled ? "running" : "load failed"); logLine("err", `load of "${name}" timed out; old module kept`); }, 3000);
+  w.onmessage = e => {
+    const m = e.data;
+    if (m.type === "loaded") {
+      clearTimeout(killer);
+      if (module.worker) { module.worker.terminate(); logLine("host", `old module "${module.name}" terminated`); }
+      module.worker = w; module.name = name; module.enabled = true; module.inflight = false; module.over = 0; module.avgMs = 0; module.imports = m.imports; module.logNames = logNames || {};
+      w.onmessage = onActions;
+      applyActions(m.actions);
+      setState("running", "running");
+      el("modname").textContent = name;
+      el("s-imports").textContent = m.imports.length + " ok";
+      logLine("host", `imports verified: ${m.imports.join(", ")}`);
+      logLine("host", `"${name}" is live. The world never paused.`);
+    } else if (m.type === "error") {
+      clearTimeout(killer); w.terminate();
+      logLine("err", `rejected "${name}": ${m.msg}`);
+      setState(module.enabled ? "running" : "dead", module.enabled ? "running" : "rejected");
+    }
+  };
+  w.postMessage({ type:"load", bytes, sensors: sensorSnapshot(), mem: W.mem }, [bytes.buffer ? bytes.buffer : bytes]);
+}
+
+function unloadModule(reason) {
+  if (module.worker) { module.worker.terminate(); module.worker = null; }
+  module.enabled = false; module.inflight = false;
+  setState("dead", reason || "unloaded");
+  logLine("host", `module "${module.name}" ${reason || "unloaded"}; rover coasting`);
+  module.name = null; el("s-imports").textContent = "—";
+}
+
+function applyActions(a) {
+  W.throttle = a.throttle; W.steer = a.steer;
+  if (a.arm !== null && a.arm !== undefined) W.armTarget = a.arm;
+  if (a.led) led.material.emissive.setRGB(a.led[0], a.led[1], a.led[2]);
+  for (const [i,v] of a.mem) W.mem[i] = v;
+  for (const [c,v] of a.logs) logLine("mod", `${module.name}: ${module.logNames[c] || ("code "+c)} ${Number.isFinite(v) ? v.toFixed(2) : v}`);
+}
+
+function onActions(e) {
+  const m = e.data;
+  module.inflight = false;
+  if (m.type === "error") { logLine("err", m.msg); unloadModule("trapped"); return; }
+  applyActions(m.actions);
+  module.avgMs = module.avgMs*0.9 + m.actions.ms*0.1;
+  el("tick").textContent = m.actions.ms < 0.0001 ? "<100 µs" : (m.actions.ms*1000).toFixed(0) + " µs";
+  if (m.actions.ms > BUDGET_MS) { if (++module.over >= 3) { logLine("err", `tick() over ${BUDGET_MS} ms budget 3× in a row`); unloadModule("disabled: over budget"); } }
+  else module.over = 0;
+}
+
+function tickModule(now) {
+  if (!module.enabled) return;
+  if (module.inflight) {
+    if (now - module.lastSent > WATCHDOG_MS) { logLine("err", `watchdog: tick() did not return in ${WATCHDOG_MS} ms`); unloadModule("killed by watchdog"); }
+    return;
+  }
+  module.inflight = true; module.lastSent = now;
+  module.worker.postMessage({ type:"tick", dt: 1/TICK_HZ, sensors: sensorsCache });
+}
+
+// ------------------------------------------------------------------ UI
+let selected = BEHAVIORS[0].name;
+function renderChips() {
+  const C = el("chips"); C.innerHTML = "";
+  for (const b of BEHAVIORS) {
+    const c = document.createElement("button"); c.className = "chip" + (b.name===selected?" sel":"") + (b.danger?" danger":""); c.textContent = b.label;
+    c.onclick = () => { selected = b.name; renderChips(); };
+    C.appendChild(c);
+  }
+  const b = BEHAVIORS.find(x=>x.name===selected);
+  el("prompt").textContent = `Player prompt: “${b.prompt}”`;
+  el("src").textContent = b.source;
+}
+renderChips();
+el("load").onclick = () => { const b = BEHAVIORS.find(x=>x.name===selected); loadModule(b.name, b64(b.wasm), b.logNames); };
+el("unload").onclick = () => module.enabled && unloadModule("unloaded by player");
+el("file").onchange = async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  loadModule(f.name.replace(/\.wasm$/,""), bytes, {});
+};
+el("bar").onclick = () => el("hud").classList.toggle("collapsed");
+if (innerHeight < 900) el("hud").classList.add("collapsed");
+el("s-budget").textContent = BUDGET_MS.toFixed(1) + " ms";
+
+// tap-to-target (ignore drags)
+const ray = new THREE.Raycaster(); let downAt = null;
+renderer.domElement.addEventListener("pointerdown", e => { downAt = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener("pointerup", e => {
+  if (!downAt || Math.hypot(e.clientX-downAt[0], e.clientY-downAt[1]) > 6) return;
+  const r = renderer.domElement.getBoundingClientRect(); const ndc = new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(scene.getObjectByName("terrain"))[0];
+  if (hit) { target.active = true; target.x = hit.point.x; target.z = hit.point.z; marker.visible = true; marker.position.set(target.x, h(target.x,target.z)+0.1, target.z); logLine("host", `target set at ${target.x.toFixed(1)}, ${target.z.toFixed(1)}`); }
+});
+
+// ------------------------------------------------------------------ loop
+let sensorsCache = sensorSnapshot();
+let last = performance.now(), acc = 0, tickAcc = 0, uiAcc = 0;
+const up = new THREE.Vector3(0,1,0), q = new THREE.Quaternion(), camOffset = new THREE.Vector3(10, 7, -12);
+camera.position.set(camOffset.x, h(0,0)+camOffset.y, camOffset.z);
+function resize() {
+  const hudH = el("hud").getBoundingClientRect().height;
+  const hgt = Math.max(160, innerHeight - hudH);
+  renderer.setSize(innerWidth, hgt, false);
+  renderer.domElement.style.height = hgt + "px";
+  camera.aspect = innerWidth/hgt; camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize); new ResizeObserver(resize).observe(el("hud")); resize();
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  let dt = Math.min(0.1, (now-last)/1000); last = now;
+  acc += dt;
+  const STEP = 1/60;
+  while (acc >= STEP) { physics(STEP); acc -= STEP; }
+  tickAcc += dt;
+  if (tickAcc >= 1/TICK_HZ) { tickAcc = 0; sensorsCache = sensorSnapshot(); tickModule(now); }
+
+  // rover pose
+  const y = h(W.x, W.z), n = normalAt(W.x, W.z);
+  rover.position.set(W.x, y, W.z);
+  q.setFromUnitVectors(up, n);
+  rover.quaternion.copy(q).multiply(new THREE.Quaternion().setFromAxisAngle(up, W.h));
+  for (const w of wheels) w.rotation.x += W.speed*dt/0.42;
+  arm1.rotation.x = -W.arm*1.1; arm2.rotation.x = W.arm*1.6;
+  led.material.emissiveIntensity = module.enabled ? 2 : 0.15;
+
+  // sun
+  const e = sunElev(), az = W.t/DAY*2*Math.PI;
+  sun.position.set(W.x + Math.cos(az)*60, W.x*0 + Math.max(2, e*80), W.z + Math.sin(az)*60); sun.target.position.set(W.x, y, W.z);
+  sun.intensity = 0.3 + Math.max(0,e)*1.5; hemi.intensity = 0.35 + Math.max(0,e)*0.7;
+  const sky = new THREE.Color(0xc98b5e).lerp(new THREE.Color(0x1d0f0a), 1-THREE.MathUtils.clamp(e+0.3,0,1)); scene.background = sky; scene.fog.color = sky;
+
+  // camera follows rover; user orbits around it
+  controls.target.lerp(new THREE.Vector3(W.x, y+1, W.z), 0.1);
+  camera.position.add(new THREE.Vector3(W.x, y+1, W.z).sub(controls.target).multiplyScalar(0.1));
+  controls.update();
+
+  uiAcc += dt;
+  if (uiAcc > 0.25) {
+    uiAcc = 0;
+    const pct = Math.round(W.bat*100);
+    el("bat").textContent = pct + "%"; el("s-bat").textContent = pct + "%"; el("m-bat").style.width = pct + "%";
+    el("m-bat").style.background = pct < 25 ? "var(--bad)" : pct < 50 ? "var(--warn)" : "var(--ok)";
+    el("s-solar").textContent = solarW().toFixed(0) + " W";
+    el("s-speed").textContent = Math.abs(W.speed).toFixed(1) + " m/s";
+    el("s-pos").textContent = `${W.x.toFixed(0)}, ${W.z.toFixed(0)}`;
+  }
+  renderer.render(scene, camera);
+}
+logLine("host", "world running. Pick a behavior and hot-load it.");
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

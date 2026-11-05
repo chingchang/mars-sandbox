@@ -1,0 +1,187 @@
+{
+  "bundle": "mars-constants",
+  "version": "0.1.0",
+  "description": "Planet-wide constants for Mars. Values from the NASA NSSDCA Mars Fact Sheet unless noted; atmospheric composition from Curiosity SAM.",
+  "facts": [
+    {
+      "id": "mars.gravity.surface_equatorial",
+      "label": "Surface gravity",
+      "value": 3.71, "unit": "m/s^2",
+      "uncertainty": { "type": "plus_minus", "value": 0.01, "note": "varies ~0.3% with latitude and elevation" },
+      "tier": "measured", "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
+    },
+    {
+      "id": "mars.radius.equatorial",
+      "label": "Equatorial radius",
+      "value": 3396200, "unit": "m",
+      "uncertainty": { "type": "plus_minus", "value": 200 },
+      "tier": "measured", "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
+    },
+    {
+      "id": "mars.mass",
+      "label": "Mass",
+      "value": 6.4169e23, "unit": "kg",
+      "uncertainty": { "type": "relative", "value": 0.0001 },
+      "tier": "measured", "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
+    },
+    {
+      "id": "mars.time.sol",
+      "label": "Length of a sol (mean solar day)",
+      "value": 88775.244, "unit": "s", "display_unit": "24 h 39 m 35.244 s",
+      "uncertainty": { "type": "plus_minus", "value": 0.001 },
+      "tier": "measured", "source_ids": ["nssdc-mars-factsheet", "jpl-mars-at-a-glance"], "as_of": "2025-05"
+    },
+    {
+      "id": "mars.time.sidereal_rotation",
+      "label": "Sidereal rotation period",
+      "value": 88642.44, "unit": "s", "display_unit": "24.6229 h",
+      "uncertainty": { "type": "unstated" },
+      "tier": "measured", "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
+    },
+    {
+      "id": "mars.time.year_sols",
+      "label": "Length of a Mars year",
+      "value": 668.6, "unit": "sol",
+      "uncertainty": { "type": "plus_minus", "value": 0.1 },
+      "tier": "derived", "formula": "686.98 d * 86400 / 88775.244", "depends_on": ["mars.time.year_days", "mars.time.sol"],
+      "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
+    },
+    {
+      "id": "mars.time.year_days",
+      "label": "Sidereal orbital period",
+      "value": 686.98, "unit": "Earth day",
+      "uncertainty": { "type": "plus_minus", "value": 0.01 },
+      "tier": "measured", "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
+    },
+    {
+      "id": "mars.orbit.obliquity",
+      "label": "Axial tilt (obliquity to orbit)",
+      "value": 25.19, "unit": "deg",
+      "uncertainty": { "type": "plus_minus", "value": 0.01 },
+      "tier": "measured", "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05",
+      "notes": "Drives Earth-like seasons. Note obliquity has varied widely over Myr timescales (not relevant to gameplay)."
+    },
+    {
+      "id": "mars.orbit.eccentricity",
+      "label": "Orbital eccentricity",
+      "value": 0.0935, "unit": "1",
+      "uncertainty": { "type": "plus_minus", "value": 0.0001 },
+      "tier": "measured", "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05",
+      "notes": "Large enough that solar flux varies ~45% between perihelion (southern summer) and aphelion."
+    },
+    {
+      "id": "mars.orbit.semimajor_axis",
+      "label": "Mean distance from Sun",
+      "value": 2.2794e11, "unit": "m", "display_unit": "1.5237 AU",
+      "uncertainty": { "type": "relative", "value": 0.0001 },
+      "tier": "measured", "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
+    },
+    {
+      "id": "mars.solar.constant_mean",
+      "label": "Top-of-atmosphere solar irradiance at mean distance",
+      "value": 586, "unit": "W/m^2",
+      "uncertainty": { "type": "plus_minus", "value": 3 },
+      "tier": "derived", "formula": "1361 W/m^2 / 1.5237^2", "depends_on": ["mars.orbit.semimajor_axis"],
+      "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05",
+      "notes": "Perihelion ~713 W/m^2, aphelion ~490 W/m^2. Surface irradiance is further reduced by dust (see jezero.dust.optical_depth_typical)."
+    },
+    {
+      "id": "mars.solar.constant_perihelion",
+      "label": "TOA solar irradiance at perihelion",
+      "value": 713, "unit": "W/m^2",
+      "uncertainty": { "type": "plus_minus", "value": 5 },
+      "tier": "derived", "formula": "1361 / (1.5237*(1-0.0935))^2", "depends_on": ["mars.orbit.semimajor_axis", "mars.orbit.eccentricity"],
+      "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
+    },
+    {
+      "id": "mars.solar.constant_aphelion",
+      "label": "TOA solar irradiance at aphelion",
+      "value": 490, "unit": "W/m^2",
+      "uncertainty": { "type": "plus_minus", "value": 5 },
+      "tier": "derived", "formula": "1361 / (1.5237*(1+0.0935))^2", "depends_on": ["mars.orbit.semimajor_axis", "mars.orbit.eccentricity"],
+      "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
+    },
+    {
+      "id": "mars.atmosphere.co2_fraction",
+      "label": "CO2 volume mixing ratio (near surface)",
+      "value": 0.960, "unit": "1",
+      "uncertainty": { "type": "plus_minus", "value": 0.007 },
+      "tier": "measured", "instrument": "Curiosity SAM quadrupole mass spectrometer",
+      "source_ids": ["sam-mahaffy-2013"], "as_of": "2013-07",
+      "valid_for": { "site": "gale" },
+      "notes": "Measured at Gale; atmosphere is well mixed so applies globally at the surface."
+    },
+    {
+      "id": "mars.atmosphere.ar40_fraction",
+      "label": "40Ar volume mixing ratio",
+      "value": 0.0193, "unit": "1",
+      "uncertainty": { "type": "plus_minus", "value": 0.0001 },
+      "tier": "measured", "instrument": "Curiosity SAM QMS", "source_ids": ["sam-mahaffy-2013"], "as_of": "2013-07"
+    },
+    {
+      "id": "mars.atmosphere.n2_fraction",
+      "label": "N2 volume mixing ratio",
+      "value": 0.0189, "unit": "1",
+      "uncertainty": { "type": "plus_minus", "value": 0.0003 },
+      "tier": "measured", "instrument": "Curiosity SAM QMS", "source_ids": ["sam-mahaffy-2013"], "as_of": "2013-07",
+      "notes": "Relevant to any nitrogen-fixation or buffer-gas ISRU design."
+    },
+    {
+      "id": "mars.atmosphere.o2_fraction",
+      "label": "O2 volume mixing ratio",
+      "value": 0.00145, "unit": "1",
+      "uncertainty": { "type": "plus_minus", "value": 0.00009 },
+      "tier": "measured", "instrument": "Curiosity SAM QMS", "source_ids": ["sam-mahaffy-2013"], "as_of": "2013-07"
+    },
+    {
+      "id": "mars.atmosphere.co_fraction",
+      "label": "CO volume mixing ratio (upper bound)",
+      "value": 0.001, "unit": "1",
+      "uncertainty": { "type": "range", "low": 0, "high": 0.001 },
+      "tier": "measured", "instrument": "Curiosity SAM QMS", "source_ids": ["sam-mahaffy-2013"], "as_of": "2013-07"
+    },
+    {
+      "id": "mars.atmosphere.mean_molar_mass",
+      "label": "Mean molar mass of air",
+      "value": 0.0436, "unit": "kg/mol",
+      "uncertainty": { "type": "plus_minus", "value": 0.0002 },
+      "tier": "derived", "formula": "sum(x_i * M_i) over CO2, Ar, N2, O2", "depends_on": ["mars.atmosphere.co2_fraction", "mars.atmosphere.ar40_fraction", "mars.atmosphere.n2_fraction", "mars.atmosphere.o2_fraction"],
+      "source_ids": ["sam-mahaffy-2013"], "as_of": "2013-07",
+      "notes": "Needed for air density: rho = p*M/(R*T). At 700 Pa and 210 K this gives ~0.017 kg/m^3."
+    },
+    {
+      "id": "mars.radiation.gcr_dose_equivalent_surface",
+      "label": "GCR dose equivalent rate at the surface (Gale, solar max)",
+      "value": 0.64, "unit": "mSv/day",
+      "uncertainty": { "type": "plus_minus", "value": 0.12 },
+      "tier": "measured", "instrument": "Curiosity RAD", "source_ids": ["rad-hassler-2013"], "as_of": "2013-12",
+      "valid_for": { "site": "gale", "elevation_m": -4400 },
+      "notes": "Measured near solar cycle 24 maximum when GCR flux is low; expect up to ~2x at solar minimum. Gale is -4.4 km MOLA, so has more atmospheric shielding than Jezero (~-2.5 km); Jezero dose will be slightly higher. Absorbed dose rate 0.210 +/- 0.040 mGy/day."
+    },
+    {
+      "id": "mars.radiation.gcr_dose_equivalent_cruise",
+      "label": "GCR dose equivalent rate in transit (inside MSL spacecraft)",
+      "value": 1.84, "unit": "mSv/day",
+      "uncertainty": { "type": "plus_minus", "value": 0.30 },
+      "tier": "measured", "instrument": "Curiosity RAD (cruise)", "source_ids": ["rad-hassler-2013", "rad-dlr-2016"], "as_of": "2013-12"
+    },
+    {
+      "id": "mars.interior.heat_flow_mean_plesa2016",
+      "label": "Mean present-day surface heat flux (thermal evolution models)",
+      "value": 25.2, "unit": "mW/m^2",
+      "uncertainty": { "type": "range", "low": 23.2, "high": 27.3 },
+      "tier": "modeled", "source_ids": ["plesa-2016-heatflux"], "as_of": "2016-11",
+      "competing_with": ["mars.interior.heat_flow_mean_frizzell2023"],
+      "notes": "No direct measurement exists: the InSight HP3 probe failed to reach depth. Earth's mean is ~90 mW/m^2. Geothermal power is not viable; subsurface thermal stability is."
+    },
+    {
+      "id": "mars.interior.heat_flow_mean_frizzell2023",
+      "label": "Mean crustal heat flow (geochemistry + InSight crustal thickness)",
+      "value": 8.5, "unit": "mW/m^2",
+      "uncertainty": { "type": "range", "low": 3.0, "high": 13.9, "note": "endmember crustal-thickness models" },
+      "tier": "modeled", "source_ids": ["frizzell-2023-heatflow"], "as_of": "2023-11",
+      "competing_with": ["mars.interior.heat_flow_mean_plesa2016"],
+      "notes": "Largest uncertainty is crustal thickness, not chemistry. Treat heat flow as 3 to 27 mW/m^2 until measured."
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mars-sandbox.dev/facts/schema.json",
+  "title": "Mars Sandbox fact bundle",
+  "type": "object",
+  "required": ["bundle", "version", "facts"],
+  "properties": {
+    "bundle": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "description": { "type": "string" },
+    "facts": { "type": "array", "items": { "$ref": "#/$defs/fact" } }
+  },
+  "$defs": {
+    "fact": {
+      "type": "object",
+      "required": ["id", "value", "unit", "uncertainty", "tier", "source_ids", "as_of"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$" },
+        "label": { "type": "string" },
+        "value": { "type": ["number", "string", "array", "object"] },
+        "unit": { "type": "string" },
+        "display_unit": { "type": "string" },
+        "uncertainty": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": { "enum": ["plus_minus", "range", "relative", "unstated", "categorical"] },
+            "value": { "type": "number" },
+            "low": { "type": "number" },
+            "high": { "type": "number" },
+            "note": { "type": "string" }
+          }
+        },
+        "tier": { "enum": ["measured", "derived", "modeled", "hypothesis", "engineering"] },
+        "source_ids": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "instrument": { "type": "string" },
+        "formula": { "type": "string", "description": "required when tier == derived" },
+        "depends_on": { "type": "array", "items": { "type": "string" } },
+        "valid_for": {
+          "type": "object",
+          "properties": {
+            "site": { "type": "string" },
+            "lat": { "type": "number" },
+            "lon_e": { "type": "number" },
+            "elevation_m": { "type": "number" },
+            "season": { "type": "string" },
+            "depth_m": { "type": "array", "items": { "type": "number" } }
+          }
+        },
+        "as_of": { "type": "string", "pattern": "^\\d{4}(-\\d{2})?(-\\d{2})?$" },
+        "superseded_by": { "type": "string" },
+        "competing_with": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      },
+      "allOf": [
+        { "if": { "properties": { "tier": { "const": "derived" } } }, "then": { "required": ["formula", "depends_on"] } }
+      ]
+    }
+  }
+}

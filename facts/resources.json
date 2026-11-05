@@ -1,0 +1,71 @@
+{
+  "bundle": "mars-resources-isru",
+  "version": "0.1.0",
+  "description": "What has actually been demonstrated or measured for living off the land on Mars: oxygen production, regolith chemistry, agriculture trials. Engineering tier = demonstrated performance, not a fact about Mars.",
+  "facts": [
+    {
+      "id": "isru.moxie.o2_rate_peak",
+      "label": "MOXIE peak oxygen production rate",
+      "value": 12, "unit": "g/h",
+      "uncertainty": { "type": "plus_minus", "value": 0.5 },
+      "tier": "engineering", "instrument": "Perseverance MOXIE (solid oxide electrolysis of CO2)", "source_ids": ["moxie-nasa-final-2023", "moxie-hoffman-2022"], "as_of": "2023-09",
+      "notes": "At >=98% purity. Design goal was 6-10 g/h. Power-limited by a 4 A supply; the instrument draws roughly 300 W during a run. Use for scaling: a crew of 4 needs ~3.3 kg O2/day; NASA's full-scale concept targets 2-3 kg/h."
+    },
+    {
+      "id": "isru.moxie.o2_total",
+      "label": "Total oxygen produced over the MOXIE campaign (16 runs)",
+      "value": 122, "unit": "g",
+      "uncertainty": { "type": "unstated" },
+      "tier": "engineering", "source_ids": ["moxie-nasa-final-2023"], "as_of": "2023-09",
+      "notes": "First run sol 60 (20 Apr 2021) produced 5.4 g in ~1 h at 751 Pa, 201 K ambient."
+    },
+    {
+      "id": "isru.moxie.o2_rate_first_run",
+      "label": "MOXIE first-run production rate",
+      "value": 5.4, "unit": "g/h",
+      "uncertainty": { "type": "plus_minus", "value": 0.1 },
+      "tier": "engineering", "source_ids": ["moxie-mit-2021", "moxie-hoffman-2022"], "as_of": "2021-04"
+    },
+    {
+      "id": "regolith.perchlorate.phoenix_site",
+      "label": "Perchlorate content of soil at the Phoenix site (68 N)",
+      "value": 0.5, "unit": "wt%",
+      "uncertainty": { "type": "range", "low": 0.4, "high": 0.6, "note": "'a few tenths of a percent' in all three samples; WCL leachate ~2.4 mM ClO4-" },
+      "tier": "measured", "instrument": "Phoenix Wet Chemistry Laboratory", "source_ids": ["hecht-2009-perchlorate", "kounaves-2010-wcl"], "as_of": "2009-07",
+      "valid_for": { "site": "phoenix", "lat": 68.22, "lon_e": 234.25 }
+    },
+    {
+      "id": "regolith.perchlorate.global_presence",
+      "label": "Perchlorate is present globally in Martian regolith",
+      "value": "likely", "unit": "categorical",
+      "uncertainty": { "type": "categorical" },
+      "tier": "modeled", "source_ids": ["hecht-2009-perchlorate", "sam-mahaffy-2013"], "as_of": "2013",
+      "notes": "Detected by Phoenix (WCL) and inferred from Curiosity SAM evolved-gas chlorine releases at Gale. Toxic to humans (thyroid) at these levels; must be removed or the regolith must not be used for food crops. Remediation (washing, microbial perchlorate reduction) is a scenario assumption, not a demonstrated capability."
+    },
+    {
+      "id": "agriculture.simulant_trials.wageningen_2019",
+      "label": "Crop growth in NASA JSC-1A Mars regolith simulant (Earth greenhouse)",
+      "value": "9 of 10 crops produced edible biomass comparable to Earth potting soil control; spinach failed; radish, rye, cress produced viable seed",
+      "unit": "text",
+      "uncertainty": { "type": "categorical" },
+      "tier": "engineering", "source_ids": ["wamelink-2019-crops"], "as_of": "2019-10",
+      "notes": "IMPORTANT CAVEATS the agent must carry into any model: (1) JSC-1A contains no perchlorate; (2) grown under Earth gravity, pressure, light and CO2; (3) simulant was amended with organic matter. This supports 'regolith can be a substrate', not 'Mars soil grows food'. Crop yield under Mars light (~43% of Earth TOA, further cut by dust) is an open modeling question."
+    },
+    {
+      "id": "water.shallow_ice.midlatitude_depth",
+      "label": "Depth to shallow ice where SWIM finds it consistent (northern mid-latitudes)",
+      "value": 1.5, "unit": "m",
+      "uncertainty": { "type": "range", "low": 0.3, "high": 5.0, "note": "SWIM distinguishes <5 m and >5 m zones; depth is site-dependent" },
+      "tier": "modeled", "source_ids": ["swim-psi"], "as_of": "2020",
+      "notes": "Candidate human landing regions (Arcadia, Utopia, Deuteronilus) are chosen for this. If the product adds a second region, pick one of these so water ISRU becomes a real design space."
+    },
+    {
+      "id": "atmosphere.water_vapor.extraction_viability",
+      "label": "Atmospheric water column",
+      "value": 10, "unit": "precipitable micrometres",
+      "uncertainty": { "type": "range", "low": 2, "high": 50, "note": "strong seasonal and latitudinal variation; MCD provides columns" },
+      "tier": "modeled", "source_ids": ["mcd-lmd"], "as_of": "2024",
+      "notes": "Extracting water from Mars air means processing ~10^5 m^3 of air per litre. Technically possible, energetically terrible. Any module claiming atmospheric water harvest must show the energy budget."
+    }
+  ]
+}
