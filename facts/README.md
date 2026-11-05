@@ -32,6 +32,8 @@ water is a `hypothesis`-grade design, and the player should see that.
 ## Files
 
 - `schema.json`           JSON Schema every fact record must validate against
+- `validate.mjs`          Validator and index builder (`npm run facts`); CI runs `npm run facts:check`
+- `index.json`            Generated flat id -> record map plus bundle versions. Do not edit; commit the regenerated file
 - `constants.json`        Planet-wide constants (gravity, sol, orbit, atmosphere composition)
 - `jezero.json`           Site-specific environment for Jezero crater (the v0.1 region)
 - `resources.json`        ISRU, water, regolith, agriculture: what has actually been demonstrated
@@ -66,7 +68,11 @@ Field rules:
 
 ## How the engine consumes this
 
-1. Build step validates every `*.json` against `schema.json` and checks all `source_ids` resolve.
+1. `validate.mjs` validates every `*.json` against `schema.json`, checks every `source_ids` entry
+   resolves to a fact source in `sources.md` (design references marked (R) may not be cited),
+   checks `depends_on` / `superseded_by` / `competing_with` resolve and are acyclic, and requires
+   `derived` records to carry a `formula`. Any violation fails the build. It emits `index.json`,
+   and CI fails if the committed `index.json` is stale.
 2. The host API exposes facts to Wasm modules by integer key; a generated table maps key → fact id.
    Modules therefore cannot invent an atmosphere; they can only `read()` what is here.
 3. The world stores the facts bundle version it was created with. A world made on `facts@1.2`
