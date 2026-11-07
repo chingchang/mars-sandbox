@@ -1,6 +1,6 @@
 {
   "bundle": "jezero-environment",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Surface environment at Jezero crater, the Mars Sandbox v0.1 region. Primary source is Perseverance MEDA. Values marked approx need to be re-derived from the PDS MEDA archive by the coding agent (see AGENT_BRIEF.md task F2).",
   "facts": [
     {
@@ -16,7 +16,28 @@
       "label": "Elevation of landing site (MOLA datum)",
       "value": -2570, "unit": "m",
       "uncertainty": { "type": "plus_minus", "value": 30, "note": "approx; re-derive from MOLA MEGDR 128 ppd at the landing coordinates" },
-      "tier": "measured", "instrument": "MGS MOLA", "source_ids": ["mola-megdr"], "as_of": "2003-03"
+      "tier": "measured", "instrument": "MGS MOLA", "source_ids": ["mola-megdr"], "as_of": "2003-03",
+      "superseded_by": "jezero.location.elevation_landing_mola128",
+      "notes": "Superseded by the value sampled from the MEGDR tile in task T1; kept per the replace-do-not-overwrite rule."
+    },
+    {
+      "id": "jezero.location.elevation_landing_mola128",
+      "label": "Elevation of landing site, MOLA MEGDR 128 ppd (areoid datum)",
+      "value": -2572.6, "unit": "m",
+      "uncertainty": { "type": "range", "low": -2587.1, "high": -2561.8, "note": "spread of the 3x3 bilinear samples (460 m spacing) around the site; MEGDR bins near the equator are interpolated across up to 12 km profile gaps" },
+      "tier": "measured", "instrument": "MGS MOLA", "source_ids": ["mola-megdr"], "as_of": "2003-03",
+      "valid_for": { "site": "jezero", "lat": 18.44, "lon_e": 77.45 },
+      "superseded_by": "jezero.location.elevation_landing_hirise1m",
+      "notes": "Bilinear sample of MEGT44N000HB.IMG (product version 2.0) at jezero.location.landing_site by terrain/mola_jezero.py; reproduced by web/terrain/jezero_mola_40km.json (elevation_m.centre). Height above the GMM3 areoid per the PDS label. Superseded by the 1 m HiRISE DTM sample, which it agrees with to within its own 3x3 spread."
+    },
+    {
+      "id": "jezero.location.elevation_landing_hirise1m",
+      "label": "Elevation of landing site, USGS Mars 2020 HiRISE DTM mosaic (MOLA areoid datum)",
+      "value": -2569.0, "unit": "m",
+      "uncertainty": { "type": "range", "low": -2569.2, "high": -2568.9, "note": "spread of the 3x3 samples at 1 m spacing; the mosaic's absolute tie to MOLA is through the CTX DTM (see source lineage), so expect metre-level absolute error" },
+      "tier": "measured", "instrument": "MRO HiRISE stereo (USGS SOCET SET DTM, MOLA-controlled)", "source_ids": ["usgs-m2020-hirise-dtm"], "as_of": "2020-07",
+      "valid_for": { "site": "jezero", "lat": 18.44, "lon_e": 77.45 },
+      "notes": "Bilinear sample of JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif at jezero.location.landing_site by terrain/hirise_jezero.py; reproduced by web/terrain/jezero_hirise_5km.json (elevation_m.centre)."
     },
     {
       "id": "jezero.terrain.dem_source",
@@ -25,7 +46,7 @@
       "unit": "text",
       "uncertainty": { "type": "categorical" },
       "tier": "measured", "source_ids": ["mola-megdr", "stack-2020-jezero-map"], "as_of": "2020-11",
-      "notes": "Stack et al. 2020 mapped the field site at 1:5000 on a 25 cm/px HiRISE orthomosaic and 1 m/px DTM. Use that DTM for the playable region; MOLA for the crater-scale context."
+      "notes": "Stack et al. 2020 mapped the field site at 1:5000 on a 25 cm/px HiRISE orthomosaic and 1 m/px DTM. Task T1 uses the USGS Mars 2020 TRN HiRISE DTM mosaic (usgs-m2020-hirise-dtm, 1 m/px) for the playable region and MOLA MEGDR for the crater-scale context; the Stack et al. supplementary record offers no DTM download."
     },
     {
       "id": "jezero.pressure.first_reading",

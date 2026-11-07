@@ -48,6 +48,7 @@ Treatment: a stochastic storm model (regional yearly-ish, global every ~3 Mars y
 Known: MEDA measured it; the headline numbers in `jezero.json` are approximate from press summaries.
 Touches: everything marked APPROX.
 Treatment: agent task F2 replaces them from PDS. Until then the sim should display the range, not the point value.
+Status: `jezero.location.elevation_landing` was replaced in task T1 (`jezero.location.elevation_landing_mola128`, sampled from the MEGDR tile). The atmospheric values remain for F2.
 
 ## 10. Governance, law, economics
 Known: Outer Space Treaty (1967) forbids national appropriation; Moon Treaty (1979) largely unratified; property and jurisdiction unsettled. Weinersmith & Weinersmith cover this at length.

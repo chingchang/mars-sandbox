@@ -1,5 +1,5 @@
 // Bundle web/app.html + compiled behaviors into a single self-contained dist/index.html
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, cpSync } from "node:fs";
 
 const META = [
   { name:"patrol", label:"Patrol square", prompt:"make the rover patrol a 30 m square around where it started and avoid rocks",
@@ -24,4 +24,7 @@ html = html.replace("/*__BEHAVIORS__*/", JSON.stringify(behaviors).replace(/<\/s
 html = html.replace("/*__HOST__*/", host);
 mkdirSync("dist", { recursive: true });
 writeFileSync("dist/index.html", html);
+// terrain heightmaps and the 16-bit PNG decoder are fetched at runtime, not embedded
+cpSync("web/terrain", "dist/terrain", { recursive: true });
+cpSync("web/png16.mjs", "dist/png16.mjs");
 console.log(`dist/index.html written (${(html.length/1024).toFixed(0)} KB)`);

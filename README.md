@@ -21,6 +21,9 @@ Proof of concept for the "player extends the running game" loop:
     pack.mjs                 embeds compiled modules into dist/index.html (single file)
     facts/                   the sourced Mars knowledge layer (see facts/README.md)
     facts/validate.mjs       validates the fact bundles and emits facts/index.json
+    terrain/*.py             PDS terrain ingestion (MOLA MEGDR, USGS HiRISE DTM) -> web/terrain/*.png + .json sidecars
+    web/png16.mjs            16-bit PNG decoder + heightmap sampler shared by the client and tests
+    test/terrain.test.mjs    every heightmap decodes to what its sidecar claims
     test/facts.test.mjs      validator tests (each violation class has a fixture)
 
 ## Run
@@ -34,6 +37,26 @@ Generate a new behavior from a prompt and load it with "Load my own .wasm":
 
     export ANTHROPIC_API_KEY=...
     python3 generate.py "zigzag toward the charger and stop 3 m short" --name zigzag
+
+## Terrain
+
+The world is the real Jezero landing site. `web/terrain/` holds 16-bit PNG
+heightmaps with JSON sidecars (datum, scale, source, version, hashes), all
+produced by reproducible scripts from PDS products:
+
+    python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+    curl -o data/raw/mola/megt44n000hb.img https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg128/megt44n000hb.img
+    curl -o data/raw/mola/megt44n000hb.lbl https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg128/megt44n000hb.lbl
+    .venv/bin/python -I terrain/mola_jezero.py --img data/raw/mola/megt44n000hb.img --lbl data/raw/mola/megt44n000hb.lbl \
+        --out web/terrain/jezero_mola_40km.png --size-km 40 --res-m 460
+    .venv/bin/python -I terrain/hirise_jezero.py fetch  --size-km 5     # ~430 MB of rows by HTTP range request
+    .venv/bin/python -I terrain/hirise_jezero.py export --size-km 5 --res-m 1 --out web/terrain/jezero_hirise_5km.png
+
+`?terrain=hirise` (default) is the USGS Mars 2020 HiRISE DTM mosaic at 1 m/px;
+`?terrain=mola` the MOLA MEGDR crater-scale context at 460 m/px;
+`?terrain=procedural` the original toy heightfield, kept for tests. World frame:
+x east, z south, y up, origin at the landing site (y = 0 is the site's own
+elevation; the sidecar carries the height above the datum).
 
 ## What the host enforces (see web/app.html, worker-src)
 
@@ -49,4 +72,4 @@ Generate a new behavior from a prompt and load it with "Load my own .wasm":
 The four sample behaviors were written by hand to the same prompt+API contract
 generate.py uses, so the demo shows the load/isolate/swap half of the loop with
 real Wasm; run generate.py with a key to see the generation half.
-Physics is a toy. The terrain is procedural, not Jezero.
+Physics is a toy. The terrain is real Jezero (HiRISE and MOLA); the rocks are not.

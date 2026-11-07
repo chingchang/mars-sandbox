@@ -1,0 +1,79 @@
+{
+  "product": "jezero_hirise_5km.png",
+  "description": "HiRISE DTM heightmap, 5 x 5 km around the Perseverance landing site, 1 m/px, north up, x east",
+  "source_id": "usgs-m2020-hirise-dtm",
+  "source": {
+    "title": "High-Resolution Imaging Science Experiment Digital Terrain Model Mosaic for Mars 2020 Terrain Relative Navigation",
+    "product": "JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
+    "doi": "10.5066/P9REJ9JN",
+    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/mars2020_trn/HiRISE/JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
+    "fetched_byte_range": [
+      949476609,
+      1377990208
+    ],
+    "fetched_rows": [
+      11090,
+      16095
+    ],
+    "fetched_sha256": "c9cc9b3a6a06a7672b46d925b7d5a7aebfc642757fa04019e47dd3c19524b361",
+    "fetched_on": "2026-11-07",
+    "label_sha256": "2a5e50ea40f1965359f3fb8d3b316e69243b77cf63f435629be58163bca7efd7"
+  },
+  "datum": {
+    "vertical": "height relative to the MOLA areoid ('MOLAtopography_DeltaGeoid' in the product name; DTMs tied to the MOLA-controlled CTX DTM, see lineage in the USGS FGDC metadata)",
+    "horizontal": "D_Mars_2000_Sphere, planetocentric latitude, east-positive longitude",
+    "sphere_radius_m": 3396190.0
+  },
+  "projection": {
+    "type": "local equirectangular tangent plane",
+    "formula": "x = R cos(lat0) (lon - lon0); y = R (lat - lat0); angles in radians",
+    "centre": {
+      "lat": 18.44,
+      "lon_e": 77.45,
+      "fact_id": "jezero.location.landing_site"
+    },
+    "x_axis": "east",
+    "y_axis": "north (row 0 is the northern edge)",
+    "sampling": "bilinear in the source mosaic; source is Equirectangular lat_ts=0 at 1 m/px, i.e. cos(lat) m per column on the ground",
+    "source_resolution": {
+      "pixels_per_degree": 59274.69752330622,
+      "map_scale_m_per_px": 1.0
+    }
+  },
+  "grid": {
+    "width": 5001,
+    "height": 5001,
+    "resolution_m": 1.0,
+    "extent_m": [
+      -2500.0,
+      2500.0,
+      -2500.0,
+      2500.0
+    ],
+    "centre_pixel": [
+      2500,
+      2500
+    ]
+  },
+  "encoding": {
+    "format": "PNG 16-bit greyscale",
+    "dtype": "uint16",
+    "offset_m": -2644.0,
+    "scale_m": 0.05,
+    "formula": "elevation_m = offset_m + scale_m * value",
+    "nodata": null
+  },
+  "elevation_m": {
+    "min": -2643.0267202642126,
+    "max": -2448.630988790209,
+    "centre": -2569.035734953305,
+    "centre_3x3_std": 0.06327053163417068,
+    "centre_3x3_range": [
+      -2569.151149648507,
+      -2568.935043185398
+    ]
+  },
+  "generated_by": "terrain/hirise_jezero.py",
+  "generated_on": "2026-11-07",
+  "facts_content_hash": "1b6ff8e772ebf0383a6c9bb2a96bb358a62b52aa8f4e1aeb7a4266d5d400ca91"
+}

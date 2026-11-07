@@ -147,6 +147,11 @@ NIST Atomic Weights and Isotopic Compositions, argon page: 40Ar relative atomic 
 https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=Ar
 Use: **F** for the 40Ar molar mass (SAM reports 40Ar specifically, so the isotope mass is used, not the terrestrial standard atomic weight). Verified 2026-11-07.
 
+## usgs-m2020-hirise-dtm
+Fergason, R. L., Galuszka, D., Hare, T. M. (2020). High-Resolution Imaging Science Experiment Digital Terrain Model Mosaic for Mars 2020 Terrain Relative Navigation. USGS Astrogeology Science Center data release. doi:10.5066/P9REJ9JN. Product JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif: 21488 x 21400 float32 metres, 1 m/px, equirectangular (standard parallel 0) on the 3396190 m Mars 2000 sphere, planetocentric, heights relative to the MOLA areoid; covers 18.3068-18.6693 N, 77.2229-77.5840 E. Lineage (FGDC metadata): SOCET SET stereo DTMs from HiRISE pairs, tied to the MOLA-controlled CTX DTM, aligned with ASP pc_align.
+https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/mars2020_trn/HiRISE/ (bucket listing; the astrogeology.usgs.gov product page redirects here)
+Use: **D** and **F** for the 1 m terrain of the playable region and the landing-site elevation. Verified 2026-11-07 (PDS3 label, ISIS label and FGDC .xml read; TIFF header parsed). Agent task T1 uses rows fetched by byte range; see `terrain/hirise_jezero.py`.
+
 ---
 
 # Design and architecture references (R)

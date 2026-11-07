@@ -7,7 +7,7 @@
     "build": "./build.sh",
     "facts": "node facts/validate.mjs",
     "facts:check": "node facts/validate.mjs --check",
-    "test": "npm run facts:check && node --test test/facts.test.mjs && node test/run.mjs",
+    "test": "npm run facts:check && node --test test/facts.test.mjs test/terrain.test.mjs && node test/run.mjs",
     "pack": "node pack.mjs"
   },
   "keywords": [],
