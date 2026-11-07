@@ -19,11 +19,15 @@ Proof of concept for the "player extends the running game" loop:
     generate.py              prompt -> source -> compile -> test -> retry loop (Anthropic or OpenAI key)
     web/app.html             the Three.js world + worker host (template)
     pack.mjs                 embeds compiled modules into dist/index.html (single file)
+    facts/                   the sourced Mars knowledge layer (see facts/README.md)
+    facts/validate.mjs       validates the fact bundles and emits facts/index.json
+    test/facts.test.mjs      validator tests (each violation class has a fixture)
 
 ## Run
 
     npm install
-    ./build.sh && node test/run.mjs && node pack.mjs
+    npm run facts            # validate facts/*.json, write facts/index.json
+    ./build.sh && npm test && node pack.mjs
     python3 -m http.server -d dist 8000      # open http://localhost:8000
 
 Generate a new behavior from a prompt and load it with "Load my own .wasm":

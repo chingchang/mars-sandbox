@@ -132,6 +132,21 @@ Wamelink, G. W. W. et al. (2019). Crop growth and viability of seeds on Mars and
 https://doi.org/10.1515/opag-2019-0051
 Use: **F** engineering, with the perchlorate and Earth-conditions caveats in `resources.json`.
 
+## prsa-2016-iau-b3
+Prša, A., Harmanec, P., Torres, G., Mamajek, E. et al. (2016). Nominal values for selected solar and planetary quantities: IAU 2015 Resolution B3. *Astronomical Journal* 152(2), 41. doi:10.3847/0004-6256/152/2/41. The paper reproduces the resolution: nominal solar constant S_N = 1361 W/m^2 (exact), nominal solar luminosity 3.828e26 W; the measured solar-cycle-23 mean it was rounded from is given as 1361 +/- 0.5 W/m^2. It also quotes IAU 2012 Resolution B2: the astronomical unit is 149 597 870 700 m exactly.
+https://iopscience.iop.org/article/10.3847/0004-6256/152/2/41 (preprint: https://arxiv.org/abs/1605.09788)
+Use: **F** for the solar constant and the astronomical unit. Verified 2026-11-06 (arXiv HTML and IOP page read verbatim). The IAU resolution PDFs on iau.org and the Kopp & Lean (2011) GRL paper it cites returned 404/403 at that time and are deliberately not listed as sources.
+
+## nist-webbook-srd69
+NIST Chemistry WebBook, SRD 69 (NIST Standard Reference Database 69), species pages: carbon dioxide (molecular weight 44.0095), nitrogen (28.0134), oxygen (31.9988). The pages give relative molecular mass without a stated uncertainty.
+https://webbook.nist.gov/cgi/cbook.cgi?ID=C124389 (CO2), https://webbook.nist.gov/cgi/cbook.cgi?ID=C7727379 (N2), https://webbook.nist.gov/cgi/cbook.cgi?ID=C7782447 (O2)
+Use: **F** for molar masses. Verified 2026-11-07.
+
+## nist-atomic-weights
+NIST Atomic Weights and Isotopic Compositions, argon page: 40Ar relative atomic mass 39.9623831237(24), isotopic composition 0.996035(25), standard atomic weight 39.948(1). The page itself carries no edition or author line; NIST's column-description page is the reference it links.
+https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=Ar
+Use: **F** for the 40Ar molar mass (SAM reports 40Ar specifically, so the isotope mass is used, not the terrestrial standard atomic weight). Verified 2026-11-07.
+
 ---
 
 # Design and architecture references (R)

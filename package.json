@@ -1,15 +1,20 @@
 {
   "name": "mars-poc",
   "version": "1.0.0",
-  "description": "",
+  "description": "Mars Sandbox: hot-loaded Wasm behaviours on a sourced Mars knowledge layer",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "./build.sh",
+    "facts": "node facts/validate.mjs",
+    "facts:check": "node facts/validate.mjs --check",
+    "test": "npm run facts:check && node --test test/facts.test.mjs && node test/run.mjs",
+    "pack": "node pack.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "ajv": "^8.20.0",
     "assemblyscript": "^0.28.20",
     "three": "^0.170.0"
   }
