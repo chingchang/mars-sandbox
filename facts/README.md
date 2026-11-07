@@ -18,6 +18,7 @@ Every fact carries exactly one `tier`:
 
 | tier         | meaning                                                                  | may change? |
 |--------------|--------------------------------------------------------------------------|-------------|
+| `defined`    | Exact by convention (the astronomical unit, SI-defined constants)         | Only when the convention changes; cite the resolution |
 | `measured`   | Directly observed in situ or from orbit by a named instrument            | Only with a new measurement; old value kept in history |
 | `derived`    | Computed from measured values with stated formula (e.g. solar constant)  | When inputs change |
 | `modeled`    | Output of a published model or reanalysis (climate DB, heat-flow models) | When a newer model version is adopted |
@@ -29,9 +30,11 @@ Every fact carries exactly one `tier`:
 
 Tiers are ranked, strongest evidence first:
 
-    measured > derived > engineering > modeled > hypothesis
+    defined > measured > derived > engineering > modeled > hypothesis
 
-Rationale: a design that depends on a demonstrated technology is making an
+Rationale: `defined` outranks everything because a value fixed by convention
+cannot be contradicted by a better instrument; it is for exact constants, not
+for anything about Mars. Below that, a design that depends on a demonstrated technology is making an
 evidential claim too, so `engineering` is ranked rather than kept as a separate
 axis. A flight demonstration (MOXIE on Mars) is stronger evidence than a model
 output, because it happened, but weaker than a measurement of Mars itself,

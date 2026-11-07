@@ -54,9 +54,11 @@ const LINK_FIELDS = ["depends_on", "superseded_by", "competing_with"];
  * than any record in its depends_on. Rationale (facts/README.md): a design that
  * depends on a demonstrated technology is making an evidential claim too; a
  * flight demo is stronger than a lab trial but weaker than a measurement of
- * Mars itself. "assumption" is player-owned and never appears in facts/.
+ * Mars itself. "defined" is for exact-by-convention values (the astronomical
+ * unit) and outranks measurement because nothing can contradict a definition.
+ * "assumption" is player-owned and never appears in facts/.
  */
-export const TIER_ORDER = ["measured", "derived", "engineering", "modeled", "hypothesis"];
+export const TIER_ORDER = ["defined", "measured", "derived", "engineering", "modeled", "hypothesis"];
 const tierRank = t => TIER_ORDER.indexOf(t);
 
 /** Unit-conversion constants a formula may quote without a fact record. */

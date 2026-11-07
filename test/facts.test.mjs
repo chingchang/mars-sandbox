@@ -37,6 +37,8 @@ test("the committed bundles validate with no errors", () => {
   assert.ok(r.ok);
   assert.ok(r.index.ids.length > 20);
   assert.ok(r.index.ids.includes("sun.solar_constant_1au") && r.index.ids.includes("astro.au"));
+  assert.equal(r.index.facts["astro.au"].tier, "defined");
+  assert.equal(r.index.facts["chem.molar_mass.ar40"].tier_rank, 1);
 });
 
 test("the committed index.json is current", () => {
@@ -53,8 +55,8 @@ test("index maps every id to its record and bundle, in file order", () => {
   assert.deepEqual(index.bundles.alpha, { file: "a.json", package: pkg, version: "0.0.1", description: "", fact_count: 2 });
   assert.deepEqual(index.sources["nssdc-mars-factsheet"].cited_by, ["x.one", "x.two", "y.one"]);
   assert.equal(index.facts["x.one"].package, pkg);
-  assert.equal(index.facts["x.one"].tier_rank, 0);
-  assert.deepEqual(index.tier_order, ["measured", "derived", "engineering", "modeled", "hypothesis"]);
+  assert.equal(index.facts["x.one"].tier_rank, 1);
+  assert.deepEqual(index.tier_order, ["defined", "measured", "derived", "engineering", "modeled", "hypothesis"]);
   assert.deepEqual(index.packages, { [pkg]: { root: ".", bundles: ["alpha", "beta"] } });
   assert.match(index.content_hash, /^[0-9a-f]{64}$/);
   rmSync(dir, { recursive: true });
@@ -193,7 +195,7 @@ test("formula literals: depends_on values, small integers and unit conversions p
 });
 
 test("tier ordering: a record may not be stronger than its dependencies", () => {
-  assert.deepEqual(TIER_ORDER, ["measured", "derived", "engineering", "modeled", "hypothesis"]);
+  assert.deepEqual(TIER_ORDER, ["defined", "measured", "derived", "engineering", "modeled", "hypothesis"]);
   const dir = fixture({ "t.json": bundle([
     good("x.meas"),
     good("x.model", { tier: "modeled" }),
@@ -204,12 +206,15 @@ test("tier ordering: a record may not be stronger than its dependencies", () => 
     good("x.bad_derived", { tier: "derived", formula: "x.model * 2", depends_on: ["x.model"] }),
     good("x.bad_eng", { tier: "engineering", depends_on: ["x.hyp"] }),
     good("x.bad_measured", { depends_on: ["x.model"] }),
+    good("x.ok_defined", { tier: "defined" }),
+    good("x.bad_defined", { tier: "defined", depends_on: ["x.meas"] }),
   ]) });
   const r = validateFacts(dir);
   assert.ok(!r.errors.some(e => /x\.ok_/.test(e)), r.errors.join("\n"));
   hasError(dir, /x\.bad_derived: tier "derived" is stronger than its dependency x\.model \(modeled\)/);
   hasError(dir, /x\.bad_eng: tier "engineering" is stronger than its dependency x\.hyp \(hypothesis\)/);
   hasError(dir, /x\.bad_measured: tier "measured" is stronger than its dependency x\.model \(modeled\)/);
+  hasError(dir, /x\.bad_defined: tier "defined" is stronger than its dependency x\.meas \(measured\)/);
 });
 
 test("warnings: APPROX records and uncited fact sources", () => {
