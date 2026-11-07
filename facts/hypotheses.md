@@ -40,14 +40,16 @@ Touches: future `lifesupport.*` facts the agent should add with sources.
 Treatment: closure fraction is a modeled parameter with a demonstrated upper bound; the engine's conservation audit (mass of O2, CO2, H2O, biomass) is what makes this honest.
 
 ## 8. Dust: storms, deposition and power
-Known: regional storm at Jezero reached tau ~2 (Jan 2022). Global storms (2018) reach tau ~8-10 for months and ended Opportunity. Dust deposits on surfaces continuously; dust devils sometimes clean them.
+Known: clear-season visible tau at Jezero is 0.4-0.5, dipping to ~0.25-0.3 at the early-summer minimum (Mastcam-Z, `jezero.dust.optical_depth_background_my36`); the regional storm reached tau ~2 (Jan 2022). Global storms (2018) reach tau ~8-10 for months and ended Opportunity. Dust deposits on surfaces continuously; dust devils sometimes clean them.
 Touches: `jezero.dust.*`.
 Treatment: a stochastic storm model (regional yearly-ish, global every ~3 Mars years) with tau time series; panel soiling rate as modeled parameter from MEDA RDS deposition studies. A solar-only base must survive a global storm; that is the classic Mars engineering exam question (DRA 5.0 baselines fission for this reason).
 
 ## 8b. Where is the Jezero dust optical depth time series?
 Known: MEDA RDS and Mastcam-Z both measure tau, and the storm value (tau ~2, Jan 2022) is published. But as of 2026-11-07 no archived tau *series* exists in PDS: the MEDA bundle (v6.0, release 16) has no optical-depth product at any level (the RDR SIS does not mention one), the Mastcam-Z bundles at the Imaging Node carry no derived atmospheric product, and the MEDA RDS papers (EPSC abstracts) publish figures, not tables.
 Touches: `jezero.dust.optical_depth_typical` (still APPROX), `jezero.dust.optical_depth_storm_jan2022`.
-Treatment: the typical/10th/90th-percentile tau that task F2 asked for are left out rather than invented. Options, in order of preference: (a) a published supplementary table (Lemmon et al. 2022 GRL, paywalled at the time; or a Mastcam-Z tau paper); (b) retrieve tau ourselves from MEDA CAL_RDS irradiances, which is research-grade work and would be `derived` with a documented method; (c) MCD dust-scenario climatology (task F3) as `modeled`. Until then the sim should use the MCD scenario and show it as modeled.
+Treatment (decided 2026-11-07): the published clear-season background tau is recorded as `measured`, quoting the sentence or figure caption it comes from (`jezero.dust.optical_depth_background_*`); the MCD dust scenarios go into task F3 as separate `modeled` time series for the engine; a tau *series* from the archive is not built by us. Instead, retrieving tau from the MEDA CAL_RDS irradiances (the archive has the calibrated photodiode signals, sol by sol) is reserved as an in-game player experiment: a player who builds a sun photometer and fits the Beer-Lambert extinction against the archive's RDS signals is doing the real retrieval, with the real caveats (scattering correction, sensor dust deposition, photodiode degradation). The result would be player-`derived`, labelled as such, never promoted into `facts/`.
+
+Maintenance note: the MY36 statistics (`jezero.*.my36_*`) cover one Mars year. When MY37 (ends mid-November 2024, roughly sol 1320) is complete in the PDS MEDA archive, rerun `facts/derive/meda_fetch.py --max-sol 1400` and `meda_my36.py` with a two-year window and publish the statistics as two-year records that supersede the MY36 ones; the scripts delimit years from the labels, so the change is the sol range and the record ids.
 
 ## 9. What are the real numbers at Jezero at night in winter?
 Known: MEDA measured it; the headline numbers in `jezero.json` are approximate from press summaries.
