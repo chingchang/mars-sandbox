@@ -5,3 +5,4 @@ __pycache__/
 .DS_Store
 data/raw/
 .venv/
+facts/derive/out/*_sols.json

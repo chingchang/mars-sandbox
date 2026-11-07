@@ -44,6 +44,11 @@ Known: regional storm at Jezero reached tau ~2 (Jan 2022). Global storms (2018) 
 Touches: `jezero.dust.*`.
 Treatment: a stochastic storm model (regional yearly-ish, global every ~3 Mars years) with tau time series; panel soiling rate as modeled parameter from MEDA RDS deposition studies. A solar-only base must survive a global storm; that is the classic Mars engineering exam question (DRA 5.0 baselines fission for this reason).
 
+## 8b. Where is the Jezero dust optical depth time series?
+Known: MEDA RDS and Mastcam-Z both measure tau, and the storm value (tau ~2, Jan 2022) is published. But as of 2026-11-07 no archived tau *series* exists in PDS: the MEDA bundle (v6.0, release 16) has no optical-depth product at any level (the RDR SIS does not mention one), the Mastcam-Z bundles at the Imaging Node carry no derived atmospheric product, and the MEDA RDS papers (EPSC abstracts) publish figures, not tables.
+Touches: `jezero.dust.optical_depth_typical` (still APPROX), `jezero.dust.optical_depth_storm_jan2022`.
+Treatment: the typical/10th/90th-percentile tau that task F2 asked for are left out rather than invented. Options, in order of preference: (a) a published supplementary table (Lemmon et al. 2022 GRL, paywalled at the time; or a Mastcam-Z tau paper); (b) retrieve tau ourselves from MEDA CAL_RDS irradiances, which is research-grade work and would be `derived` with a documented method; (c) MCD dust-scenario climatology (task F3) as `modeled`. Until then the sim should use the MCD scenario and show it as modeled.
+
 ## 9. What are the real numbers at Jezero at night in winter?
 Known: MEDA measured it; the headline numbers in `jezero.json` are approximate from press summaries.
 Touches: everything marked APPROX.

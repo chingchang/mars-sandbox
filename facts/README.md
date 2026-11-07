@@ -58,6 +58,7 @@ Two rules follow from the ordering:
 
 - `schema.json`           JSON Schema every fact record must validate against
 - `validate.mjs`          Validator and index builder (`npm run facts`); CI runs `npm run facts:check`
+- `derive/`               Reproducible derivations: `recompute.mjs` re-evaluates every `derived` formula (part of `facts:check`); `meda_fetch.py` + `meda_my36.py` produce `derive/out/meda_my36.json`, the statistics behind the MY36 Jezero records
 - `index.json`            Generated: id -> record map, bundle versions, source citations, content hash. Do not edit; commit the regenerated file
 - `constants.json`        Planet-wide constants (gravity, sol, orbit, atmosphere composition)
 - `jezero.json`           Site-specific environment for Jezero crater (the v0.1 region)
@@ -101,6 +102,20 @@ numbers. Every numeric literal in a formula must be the `value` of a record in
 inside `facts/` is exactly the silent assumption `CLAUDE.md` rules out. If a
 formula needs a physical constant, add it as a record with a source (see
 `sun.solar_constant_1au`, `astro.au`).
+
+## Derivations (`derive/`)
+
+Every number that is a statistic of an archive, not a quote from a paper, is
+produced by a script here, and the record's `notes` name the script and the
+output file that holds the number with its sol list, product versions and
+method. `derive/out/*.json` is committed; the raw inputs under `data/raw/`
+are not (gitignored, several GB) but the output records every file's LID,
+version and sha256 so a reviewer can refetch and recompute.
+
+`derive/recompute.mjs` evaluates every `derived` record's formula with the
+values of its `depends_on` and fails when the stored value disagrees beyond
+its uncertainty (or half a unit in the last place). A prose formula is an
+error unless the id is listed in the script's `NOT_EVALUABLE` with a reason.
 
 ## index.json
 

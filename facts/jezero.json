@@ -1,42 +1,93 @@
 {
   "bundle": "jezero-environment",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Surface environment at Jezero crater, the Mars Sandbox v0.1 region. Primary source is Perseverance MEDA. Values marked approx need to be re-derived from the PDS MEDA archive by the coding agent (see AGENT_BRIEF.md task F2).",
   "facts": [
     {
       "id": "jezero.location.landing_site",
       "label": "Perseverance landing site (Octavia E. Butler Landing)",
-      "value": { "lat": 18.44, "lon_e": 77.45 }, "unit": "deg",
-      "uncertainty": { "type": "plus_minus", "value": 0.01 },
-      "tier": "measured", "source_ids": ["meda-2023-naturegeo"], "as_of": "2021-02",
+      "value": {
+        "lat": 18.44,
+        "lon_e": 77.45
+      },
+      "unit": "deg",
+      "uncertainty": {
+        "type": "plus_minus",
+        "value": 0.01
+      },
+      "tier": "measured",
+      "source_ids": [
+        "meda-2023-naturegeo"
+      ],
+      "as_of": "2021-02",
       "notes": "Jezero is a ~50 km crater on the NW rim of the Isidis basin; Noachian lake basin with a fluvial delta."
     },
     {
       "id": "jezero.location.elevation_landing",
       "label": "Elevation of landing site (MOLA datum)",
-      "value": -2570, "unit": "m",
-      "uncertainty": { "type": "plus_minus", "value": 30, "note": "approx; re-derive from MOLA MEGDR 128 ppd at the landing coordinates" },
-      "tier": "measured", "instrument": "MGS MOLA", "source_ids": ["mola-megdr"], "as_of": "2003-03",
+      "value": -2570,
+      "unit": "m",
+      "uncertainty": {
+        "type": "plus_minus",
+        "value": 30,
+        "note": "approx; re-derive from MOLA MEGDR 128 ppd at the landing coordinates"
+      },
+      "tier": "measured",
+      "instrument": "MGS MOLA",
+      "source_ids": [
+        "mola-megdr"
+      ],
+      "as_of": "2003-03",
       "superseded_by": "jezero.location.elevation_landing_mola128",
       "notes": "Superseded by the value sampled from the MEGDR tile in task T1; kept per the replace-do-not-overwrite rule."
     },
     {
       "id": "jezero.location.elevation_landing_mola128",
       "label": "Elevation of landing site, MOLA MEGDR 128 ppd (areoid datum)",
-      "value": -2572.6, "unit": "m",
-      "uncertainty": { "type": "range", "low": -2587.1, "high": -2561.8, "note": "spread of the 3x3 bilinear samples (460 m spacing) around the site; MEGDR bins near the equator are interpolated across up to 12 km profile gaps" },
-      "tier": "measured", "instrument": "MGS MOLA", "source_ids": ["mola-megdr"], "as_of": "2003-03",
-      "valid_for": { "site": "jezero", "lat": 18.44, "lon_e": 77.45 },
+      "value": -2572.6,
+      "unit": "m",
+      "uncertainty": {
+        "type": "range",
+        "low": -2587.1,
+        "high": -2561.8,
+        "note": "spread of the 3x3 bilinear samples (460 m spacing) around the site; MEGDR bins near the equator are interpolated across up to 12 km profile gaps"
+      },
+      "tier": "measured",
+      "instrument": "MGS MOLA",
+      "source_ids": [
+        "mola-megdr"
+      ],
+      "as_of": "2003-03",
+      "valid_for": {
+        "site": "jezero",
+        "lat": 18.44,
+        "lon_e": 77.45
+      },
       "superseded_by": "jezero.location.elevation_landing_hirise1m",
       "notes": "Bilinear sample of MEGT44N000HB.IMG (product version 2.0) at jezero.location.landing_site by terrain/mola_jezero.py; reproduced by web/terrain/jezero_mola_40km.json (elevation_m.centre). Height above the GMM3 areoid per the PDS label. Superseded by the 1 m HiRISE DTM sample, which it agrees with to within its own 3x3 spread."
     },
     {
       "id": "jezero.location.elevation_landing_hirise1m",
       "label": "Elevation of landing site, USGS Mars 2020 HiRISE DTM mosaic (MOLA areoid datum)",
-      "value": -2569.0, "unit": "m",
-      "uncertainty": { "type": "range", "low": -2569.2, "high": -2568.9, "note": "spread of the 3x3 samples at 1 m spacing; the mosaic's absolute tie to MOLA is through the CTX DTM (see source lineage), so expect metre-level absolute error" },
-      "tier": "measured", "instrument": "MRO HiRISE stereo (USGS SOCET SET DTM, MOLA-controlled)", "source_ids": ["usgs-m2020-hirise-dtm"], "as_of": "2020-07",
-      "valid_for": { "site": "jezero", "lat": 18.44, "lon_e": 77.45 },
+      "value": -2569.0,
+      "unit": "m",
+      "uncertainty": {
+        "type": "range",
+        "low": -2569.2,
+        "high": -2568.9,
+        "note": "spread of the 3x3 samples at 1 m spacing; the mosaic's absolute tie to MOLA is through the CTX DTM (see source lineage), so expect metre-level absolute error"
+      },
+      "tier": "measured",
+      "instrument": "MRO HiRISE stereo (USGS SOCET SET DTM, MOLA-controlled)",
+      "source_ids": [
+        "usgs-m2020-hirise-dtm"
+      ],
+      "as_of": "2020-07",
+      "valid_for": {
+        "site": "jezero",
+        "lat": 18.44,
+        "lon_e": 77.45
+      },
       "notes": "Bilinear sample of JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif at jezero.location.landing_site by terrain/hirise_jezero.py; reproduced by web/terrain/jezero_hirise_5km.json (elevation_m.centre)."
     },
     {
@@ -44,130 +95,590 @@
       "label": "Terrain data products for the v0.1 region",
       "value": "MOLA MEGDR 128 ppd (global, ~463 m/px) + HiRISE 1 m/px stereo DTM over the Perseverance field site",
       "unit": "text",
-      "uncertainty": { "type": "categorical" },
-      "tier": "measured", "source_ids": ["mola-megdr", "stack-2020-jezero-map"], "as_of": "2020-11",
+      "uncertainty": {
+        "type": "categorical"
+      },
+      "tier": "measured",
+      "source_ids": [
+        "mola-megdr",
+        "stack-2020-jezero-map"
+      ],
+      "as_of": "2020-11",
       "notes": "Stack et al. 2020 mapped the field site at 1:5000 on a 25 cm/px HiRISE orthomosaic and 1 m/px DTM. Task T1 uses the USGS Mars 2020 TRN HiRISE DTM mosaic (usgs-m2020-hirise-dtm, 1 m/px) for the playable region and MOLA MEGDR for the crater-scale context; the Stack et al. supplementary record offers no DTM download."
     },
     {
       "id": "jezero.pressure.first_reading",
       "label": "Surface pressure, first MEDA report (sol 1, Ls~6)",
-      "value": 718, "unit": "Pa",
-      "uncertainty": { "type": "plus_minus", "value": 2 },
-      "tier": "measured", "instrument": "Perseverance MEDA PS", "source_ids": ["meda-first-report-2021"], "as_of": "2021-02",
-      "valid_for": { "site": "jezero", "season": "Ls 6" }
+      "value": 718,
+      "unit": "Pa",
+      "uncertainty": {
+        "type": "plus_minus",
+        "value": 2
+      },
+      "tier": "measured",
+      "instrument": "Perseverance MEDA PS",
+      "source_ids": [
+        "meda-first-report-2021"
+      ],
+      "as_of": "2021-02",
+      "valid_for": {
+        "site": "jezero",
+        "season": "Ls 6"
+      }
     },
     {
       "id": "jezero.pressure.annual_envelope",
       "label": "Surface pressure envelope over a Mars year",
-      "value": 700, "unit": "Pa",
-      "uncertainty": { "type": "range", "low": 640, "high": 780, "note": "approx envelope; driven by the seasonal CO2 polar-cap cycle (~±8%) plus a diurnal thermal-tide cycle of a few percent" },
-      "tier": "measured", "instrument": "Perseverance MEDA PS", "source_ids": ["meda-2023-naturegeo", "meda-year1-upvehu-2023"], "as_of": "2023-01",
-      "notes": "APPROX. Agent task F2: replace with min/max/mean from the PDS MEDA PS archive for MY36."
+      "value": 700,
+      "unit": "Pa",
+      "uncertainty": {
+        "type": "range",
+        "low": 640,
+        "high": 780,
+        "note": "approx envelope; driven by the seasonal CO2 polar-cap cycle (~±8%) plus a diurnal thermal-tide cycle of a few percent"
+      },
+      "tier": "measured",
+      "instrument": "Perseverance MEDA PS",
+      "source_ids": [
+        "meda-2023-naturegeo",
+        "meda-year1-upvehu-2023"
+      ],
+      "as_of": "2023-01",
+      "notes": "Was APPROX; replaced in task F2, kept per the replace-do-not-overwrite rule.",
+      "superseded_by": "jezero.pressure.my36_daily_mean"
     },
     {
       "id": "jezero.temperature.air_annual_mean",
       "label": "Mean near-surface air temperature over a Mars year (1.45 m)",
-      "value": 218, "unit": "K", "display_unit": "-55 °C",
-      "uncertainty": { "type": "plus_minus", "value": 5 },
-      "tier": "measured", "instrument": "Perseverance MEDA ATS", "source_ids": ["meda-year1-upvehu-2023"], "as_of": "2023-01",
-      "notes": "Reported as 'around minus 55 degrees Celsius' averaged across seasons."
+      "value": 218,
+      "unit": "K",
+      "display_unit": "-55 °C",
+      "uncertainty": {
+        "type": "plus_minus",
+        "value": 5
+      },
+      "tier": "measured",
+      "instrument": "Perseverance MEDA ATS",
+      "source_ids": [
+        "meda-year1-upvehu-2023"
+      ],
+      "as_of": "2023-01",
+      "notes": "Reported as 'around minus 55 degrees Celsius' averaged across seasons.",
+      "superseded_by": "jezero.temperature.my36_air_annual_mean"
     },
     {
       "id": "jezero.temperature.air_diurnal_min_typical",
       "label": "Typical nightly minimum air temperature",
-      "value": 190, "unit": "K", "display_unit": "-83 °C",
-      "uncertainty": { "type": "range", "low": 180, "high": 200, "note": "approx; seasonal" },
-      "tier": "measured", "instrument": "Perseverance MEDA ATS", "source_ids": ["meda-2023-naturegeo"], "as_of": "2023-01",
-      "notes": "APPROX. Agent task F2."
+      "value": 190,
+      "unit": "K",
+      "display_unit": "-83 °C",
+      "uncertainty": {
+        "type": "range",
+        "low": 180,
+        "high": 200,
+        "note": "approx; seasonal"
+      },
+      "tier": "measured",
+      "instrument": "Perseverance MEDA ATS",
+      "source_ids": [
+        "meda-2023-naturegeo"
+      ],
+      "as_of": "2023-01",
+      "notes": "Was APPROX; replaced in task F2, kept per the replace-do-not-overwrite rule.",
+      "superseded_by": "jezero.temperature.my36_air_diurnal_min"
     },
     {
       "id": "jezero.temperature.air_diurnal_max_typical",
       "label": "Typical afternoon maximum air temperature",
-      "value": 253, "unit": "K", "display_unit": "-20 °C",
-      "uncertainty": { "type": "range", "low": 240, "high": 265, "note": "approx; seasonal" },
-      "tier": "measured", "instrument": "Perseverance MEDA ATS", "source_ids": ["meda-2023-naturegeo"], "as_of": "2023-01",
-      "notes": "APPROX. Ground (not air) temperature at midday can approach or exceed 273 K in summer; the ground-air difference is large on Mars because the air is so thin. Agent task F2."
+      "value": 253,
+      "unit": "K",
+      "display_unit": "-20 °C",
+      "uncertainty": {
+        "type": "range",
+        "low": 240,
+        "high": 265,
+        "note": "approx; seasonal"
+      },
+      "tier": "measured",
+      "instrument": "Perseverance MEDA ATS",
+      "source_ids": [
+        "meda-2023-naturegeo"
+      ],
+      "as_of": "2023-01",
+      "notes": "APPROX. Ground (not air) temperature at midday can approach or exceed 273 K in summer; the ground-air difference is large on Mars because the air is so thin. Agent task F2.",
+      "superseded_by": "jezero.temperature.my36_air_diurnal_max"
     },
     {
       "id": "jezero.temperature.diurnal_range_typical",
       "label": "Typical day-night air temperature swing",
-      "value": 60, "unit": "K",
-      "uncertainty": { "type": "range", "low": 50, "high": 80 },
-      "tier": "measured", "instrument": "Perseverance MEDA ATS", "source_ids": ["meda-year1-upvehu-2023"], "as_of": "2023-01",
-      "notes": "This swing, not the mean, is what kills unheated structures. A thermal-mass design must bridge it every sol."
+      "value": 60,
+      "unit": "K",
+      "uncertainty": {
+        "type": "range",
+        "low": 50,
+        "high": 80
+      },
+      "tier": "measured",
+      "instrument": "Perseverance MEDA ATS",
+      "source_ids": [
+        "meda-year1-upvehu-2023"
+      ],
+      "as_of": "2023-01",
+      "notes": "This swing, not the mean, is what kills unheated structures. A thermal-mass design must bridge it every sol.",
+      "superseded_by": "jezero.temperature.my36_air_diurnal_swing"
     },
     {
       "id": "jezero.surface.thermal_inertia_range",
       "label": "Surface thermal inertia along the traverse",
-      "value": 400, "unit": "J m^-2 K^-1 s^-1/2",
-      "uncertainty": { "type": "range", "low": 180, "high": 605 },
-      "tier": "measured", "instrument": "Perseverance MEDA TIRS", "source_ids": ["meda-2023-naturegeo"], "as_of": "2023-01",
+      "value": 400,
+      "unit": "J m^-2 K^-1 s^-1/2",
+      "uncertainty": {
+        "type": "range",
+        "low": 180,
+        "high": 605
+      },
+      "tier": "measured",
+      "instrument": "Perseverance MEDA TIRS",
+      "source_ids": [
+        "meda-2023-naturegeo"
+      ],
+      "as_of": "2023-01",
       "notes": "Low values = loose dust/sand (fast heating and cooling); high = bedrock. Matters for regolith-as-insulation designs."
     },
     {
       "id": "jezero.surface.albedo_broadband",
       "label": "Broadband surface albedo (0.3-3 um)",
-      "value": 0.20, "unit": "1",
-      "uncertainty": { "type": "range", "low": 0.15, "high": 0.30, "note": "varies with illumination angle; minimum near noon" },
-      "tier": "measured", "instrument": "Perseverance MEDA RDS+TIRS", "source_ids": ["meda-2023-naturegeo"], "as_of": "2023-01"
+      "value": 0.2,
+      "unit": "1",
+      "uncertainty": {
+        "type": "range",
+        "low": 0.15,
+        "high": 0.3,
+        "note": "varies with illumination angle; minimum near noon"
+      },
+      "tier": "measured",
+      "instrument": "Perseverance MEDA RDS+TIRS",
+      "source_ids": [
+        "meda-2023-naturegeo"
+      ],
+      "as_of": "2023-01"
     },
     {
       "id": "jezero.dust.optical_depth_typical",
       "label": "Typical visible dust optical depth (clear season)",
-      "value": 0.45, "unit": "1",
-      "uncertainty": { "type": "range", "low": 0.3, "high": 0.7, "note": "approx; Jezero was reported clearer than Gale at landing" },
-      "tier": "measured", "instrument": "Perseverance MEDA RDS / Mastcam-Z", "source_ids": ["meda-rds-epsc2026", "meda-first-report-2021"], "as_of": "2026-09",
+      "value": 0.45,
+      "unit": "1",
+      "uncertainty": {
+        "type": "range",
+        "low": 0.3,
+        "high": 0.7,
+        "note": "approx; Jezero was reported clearer than Gale at landing"
+      },
+      "tier": "measured",
+      "instrument": "Perseverance MEDA RDS / Mastcam-Z",
+      "source_ids": [
+        "meda-rds-epsc2026",
+        "meda-first-report-2021"
+      ],
+      "as_of": "2026-09",
       "notes": "APPROX. Surface irradiance ≈ TOA * exp(-tau/cos(sza)) * (scattering correction). Agent task F2: pull the Mastcam-Z tau series."
     },
     {
       "id": "jezero.dust.optical_depth_storm_jan2022",
       "label": "Peak visible optical depth, regional dust storm 5-11 Jan 2022 (Ls 153-156)",
-      "value": 2.0, "unit": "1",
-      "uncertainty": { "type": "plus_minus", "value": 0.3 },
-      "tier": "measured", "instrument": "Perseverance MEDA / Mastcam-Z", "source_ids": ["lemmon-2022-duststorm", "meda-year1-upvehu-2023"], "as_of": "2022-01",
+      "value": 2.0,
+      "unit": "1",
+      "uncertainty": {
+        "type": "plus_minus",
+        "value": 0.3
+      },
+      "tier": "measured",
+      "instrument": "Perseverance MEDA / Mastcam-Z",
+      "source_ids": [
+        "lemmon-2022-duststorm",
+        "meda-year1-upvehu-2023"
+      ],
+      "as_of": "2022-01",
       "notes": "A regional storm roughly quarters usable solar power for days. Global storms (2018 killed Opportunity) can reach tau ~8-10 and last months; none has been measured at Jezero yet."
     },
     {
       "id": "jezero.dust.dust_devil_frequency",
       "label": "Dust devil frequency of occurrence (first 365 sols)",
-      "value": 374, "unit": "events detected / 365 sols",
-      "uncertainty": { "type": "unstated" },
-      "tier": "measured", "instrument": "Perseverance MEDA RDS", "source_ids": ["meda-dustdevils-rds"], "as_of": "2023",
+      "value": 374,
+      "unit": "events detected / 365 sols",
+      "uncertainty": {
+        "type": "unstated"
+      },
+      "tier": "measured",
+      "instrument": "Perseverance MEDA RDS",
+      "source_ids": [
+        "meda-dustdevils-rds"
+      ],
+      "as_of": "2023",
       "notes": "Peak 12:00-13:00 LTST. Dust devils at Jezero can exceed 100 m diameter. A dust devil damaged a MEDA wind sensor in the Jan 2022 storm. Relevant to solar panel dust loading (also cleaning events)."
     },
     {
       "id": "jezero.radiation.gcr_dose_equivalent_estimate",
       "label": "Estimated GCR dose equivalent at Jezero",
-      "value": 0.70, "unit": "mSv/day",
-      "uncertainty": { "type": "range", "low": 0.55, "high": 1.3, "note": "scaled from Gale measurement for ~1.9 km less atmospheric shielding and solar-cycle variation" },
-      "tier": "modeled", "depends_on": ["mars.radiation.gcr_dose_equivalent_surface"],
-      "source_ids": ["rad-hassler-2013"], "as_of": "2013-12",
+      "value": 0.7,
+      "unit": "mSv/day",
+      "uncertainty": {
+        "type": "range",
+        "low": 0.55,
+        "high": 1.3,
+        "note": "scaled from Gale measurement for ~1.9 km less atmospheric shielding and solar-cycle variation"
+      },
+      "tier": "modeled",
+      "depends_on": [
+        "mars.radiation.gcr_dose_equivalent_surface"
+      ],
+      "source_ids": [
+        "rad-hassler-2013"
+      ],
+      "as_of": "2013-12",
       "notes": "Rule of thumb: ~1 m of regolith or ~2-3 m of water reduces GCR dose substantially; shielding is a design parameter, not a fact. Agent: model, do not state as measured."
     },
     {
       "id": "jezero.subsurface.shallow_ice_likelihood",
       "label": "Likelihood of accessible water ice in the top 5 m at Jezero latitude (18 N)",
-      "value": "low", "unit": "categorical",
-      "uncertainty": { "type": "categorical" },
-      "tier": "modeled", "source_ids": ["swim-psi"], "as_of": "2020",
+      "value": "low",
+      "unit": "categorical",
+      "uncertainty": {
+        "type": "categorical"
+      },
+      "tier": "modeled",
+      "source_ids": [
+        "swim-psi"
+      ],
+      "as_of": "2020",
       "notes": "SWIM maps show consistent shallow ice mostly poleward of ~35-40 deg latitude. Jezero is a science site, not a resource site. Water for a Jezero base is therefore hydrated minerals, atmospheric extraction, or import. This is a design constraint the agent must surface."
     },
     {
       "id": "jezero.subsurface.deep_liquid_water",
       "label": "Liquid water in fractured mid-crust (global inference from InSight)",
-      "value": { "depth_km_low": 11.5, "depth_km_high": 20 }, "unit": "km",
-      "uncertainty": { "type": "categorical", "note": "single-site seismic inversion; authors argue it is likely global" },
-      "tier": "hypothesis", "source_ids": ["wright-2024-midcrust-water"], "as_of": "2024-08",
+      "value": {
+        "depth_km_low": 11.5,
+        "depth_km_high": 20
+      },
+      "unit": "km",
+      "uncertainty": {
+        "type": "categorical",
+        "note": "single-site seismic inversion; authors argue it is likely global"
+      },
+      "tier": "hypothesis",
+      "source_ids": [
+        "wright-2024-midcrust-water"
+      ],
+      "as_of": "2024-08",
       "notes": "Volume exceeds proposed ancient oceans. Not accessible with any plausible drilling; relevant to astrobiology scenarios, not to base water supply."
     },
     {
       "id": "jezero.subsurface.thermal_stability_depth",
       "label": "Depth below which diurnal temperature swing is negligible",
-      "value": 0.3, "unit": "m",
-      "uncertainty": { "type": "range", "low": 0.1, "high": 0.5, "note": "depends on thermal inertia; the annual wave penetrates several metres" },
-      "tier": "derived", "formula": "skin depth d = sqrt(2*kappa/omega), kappa from thermal inertia and regolith density", "depends_on": ["jezero.surface.thermal_inertia_range", "mars.time.sol"],
-      "source_ids": ["meda-2023-naturegeo"], "as_of": "2023-01",
+      "value": 0.3,
+      "unit": "m",
+      "uncertainty": {
+        "type": "range",
+        "low": 0.1,
+        "high": 0.5,
+        "note": "depends on thermal inertia; the annual wave penetrates several metres"
+      },
+      "tier": "derived",
+      "formula": "skin depth d = sqrt(2*kappa/omega), kappa from thermal inertia and regolith density",
+      "depends_on": [
+        "jezero.surface.thermal_inertia_range",
+        "mars.time.sol"
+      ],
+      "source_ids": [
+        "meda-2023-naturegeo"
+      ],
+      "as_of": "2023-01",
       "notes": "Agent must compute this from the primitives library, not hard-code it. Buried or regolith-covered structures see the mean (~218 K), not the swing."
+    },
+    {
+      "id": "jezero.pressure.my36_daily_mean",
+      "label": "Surface pressure, MY36 mean of daily means",
+      "value": 719.2,
+      "unit": "Pa",
+      "uncertainty": {
+        "type": "range",
+        "low": 622.9,
+        "high": 804.0,
+        "note": "range of the daily means over the year (seasonal CO2 cycle); min on sol 315 (Ls 154), max on sol 472 (Ls 249); 561 sols with >=16 of 24 hours sampled"
+      },
+      "tier": "measured",
+      "source_ids": [
+        "meda-pds-archive"
+      ],
+      "as_of": "2022-12",
+      "valid_for": {
+        "site": "jezero",
+        "lat": 18.44,
+        "lon_e": 77.45,
+        "season": "MY36, Ls 6.1-359.9"
+      },
+      "instrument": "Perseverance MEDA PS (derived level, barocap 3)",
+      "notes": "Replaces the placeholder envelope. Absolute 1 Hz extremes over the year: 583.5 Pa (sol 313) to 820.4 Pa (sol 472). MEDA bundle v6.0, products CAL_ATS v1.0, CAL_ATS v2.0, DER_PS v1.0, DER_PS v2.0, DER_PS v3.0, sols 1-658; statistic of the archive computed by facts/derive/meda_my36.py (method in facts/derive/out/meda_my36.json). derive: facts/derive/out/meda_my36.json#pressure_pa.annual.mean_of_daily_means"
+    },
+    {
+      "id": "jezero.pressure.my36_diurnal_swing",
+      "label": "Surface pressure, typical daily swing (max - min within a sol)",
+      "value": 33.9,
+      "unit": "Pa",
+      "uncertainty": {
+        "type": "range",
+        "low": 18.5,
+        "high": 49.8,
+        "note": "10th-90th percentile over 565 sols with both pre-dawn and afternoon coverage"
+      },
+      "tier": "measured",
+      "source_ids": [
+        "meda-pds-archive"
+      ],
+      "as_of": "2022-12",
+      "valid_for": {
+        "site": "jezero",
+        "lat": 18.44,
+        "lon_e": 77.45,
+        "season": "MY36, Ls 6.1-359.9"
+      },
+      "instrument": "Perseverance MEDA PS (derived level, barocap 3)",
+      "notes": "Median over sols. Daily minimum typically near 16.6 LTST, maximum near 7.6 LTST (thermal tide). MEDA bundle v6.0, products CAL_ATS v1.0, CAL_ATS v2.0, DER_PS v1.0, DER_PS v2.0, DER_PS v3.0, sols 1-658; statistic of the archive computed by facts/derive/meda_my36.py (method in facts/derive/out/meda_my36.json). derive: facts/derive/out/meda_my36.json#pressure_pa.diurnal.swing_p10_p50_p90[1]"
+    },
+    {
+      "id": "jezero.pressure.my36_daily_mean_by_season",
+      "label": "Surface pressure, median daily mean by season",
+      "value": {
+        "spring": {
+          "ls": [
+            0,
+            90
+          ],
+          "daily_mean_p50_pa": 751.4,
+          "n_sols": 152
+        },
+        "summer": {
+          "ls": [
+            90,
+            180
+          ],
+          "daily_mean_p50_pa": 639.9,
+          "n_sols": 151
+        },
+        "autumn": {
+          "ls": [
+            180,
+            270
+          ],
+          "daily_mean_p50_pa": 753.6,
+          "n_sols": 108
+        },
+        "winter": {
+          "ls": [
+            270,
+            360
+          ],
+          "daily_mean_p50_pa": 734.8,
+          "n_sols": 150
+        }
+      },
+      "unit": "Pa",
+      "uncertainty": {
+        "type": "categorical",
+        "note": "per-season medians of the daily means; seasons are Ls quarters"
+      },
+      "tier": "measured",
+      "source_ids": [
+        "meda-pds-archive"
+      ],
+      "as_of": "2022-12",
+      "valid_for": {
+        "site": "jezero",
+        "lat": 18.44,
+        "lon_e": 77.45,
+        "season": "MY36, Ls 6.1-359.9"
+      },
+      "instrument": "Perseverance MEDA PS (derived level, barocap 3)",
+      "notes": "Structured companion to jezero.pressure.my36_daily_mean for the climate model. MEDA bundle v6.0, products CAL_ATS v1.0, CAL_ATS v2.0, DER_PS v1.0, DER_PS v2.0, DER_PS v3.0, sols 1-658; statistic of the archive computed by facts/derive/meda_my36.py (method in facts/derive/out/meda_my36.json). derive: facts/derive/out/meda_my36.json#pressure_pa.by_season"
+    },
+    {
+      "id": "jezero.temperature.my36_air_annual_mean",
+      "label": "Air temperature at 1.45 m, MY36 mean of daily means",
+      "value": 218.6,
+      "unit": "K",
+      "uncertainty": {
+        "type": "range",
+        "low": 209.6,
+        "high": 231.4,
+        "note": "range of the daily means over the year; 561 sols with >=16 of 24 hours sampled"
+      },
+      "tier": "measured",
+      "source_ids": [
+        "meda-pds-archive"
+      ],
+      "as_of": "2022-12",
+      "valid_for": {
+        "site": "jezero",
+        "lat": 18.44,
+        "lon_e": 77.45,
+        "season": "MY36, Ls 6.1-359.9"
+      },
+      "instrument": "Perseverance MEDA ATS (calibrated level, median of the three mast sensors at 1.45 m)",
+      "display_unit": "-55 °C",
+      "notes": "Replaces the press-release value. MEDA bundle v6.0, products CAL_ATS v1.0, CAL_ATS v2.0, DER_PS v1.0, DER_PS v2.0, DER_PS v3.0, sols 1-658; statistic of the archive computed by facts/derive/meda_my36.py (method in facts/derive/out/meda_my36.json). derive: facts/derive/out/meda_my36.json#air_temperature_k.annual.mean_of_daily_means"
+    },
+    {
+      "id": "jezero.temperature.my36_air_diurnal_min",
+      "label": "Air temperature at 1.45 m, typical nightly minimum",
+      "value": 193.0,
+      "unit": "K",
+      "uncertainty": {
+        "type": "range",
+        "low": 188.7,
+        "high": 196.0,
+        "note": "10th-90th percentile of sol minima over 586 sols with pre-dawn (03-07 LTST) coverage"
+      },
+      "tier": "measured",
+      "source_ids": [
+        "meda-pds-archive"
+      ],
+      "as_of": "2022-12",
+      "valid_for": {
+        "site": "jezero",
+        "lat": 18.44,
+        "lon_e": 77.45,
+        "season": "MY36, Ls 6.1-359.9"
+      },
+      "instrument": "Perseverance MEDA ATS (calibrated level, median of the three mast sensors at 1.45 m)",
+      "display_unit": "-80 °C",
+      "notes": "Replaces the placeholder value. Minimum typically near 5.4 LTST. MEDA bundle v6.0, products CAL_ATS v1.0, CAL_ATS v2.0, DER_PS v1.0, DER_PS v2.0, DER_PS v3.0, sols 1-658; statistic of the archive computed by facts/derive/meda_my36.py (method in facts/derive/out/meda_my36.json). derive: facts/derive/out/meda_my36.json#air_temperature_k.diurnal.min_p10_p50_p90[1]"
+    },
+    {
+      "id": "jezero.temperature.my36_air_diurnal_max",
+      "label": "Air temperature at 1.45 m, typical afternoon maximum",
+      "value": 257.1,
+      "unit": "K",
+      "uncertainty": {
+        "type": "range",
+        "low": 252.5,
+        "high": 267.4,
+        "note": "10th-90th percentile of sol maxima over 592 sols with afternoon (12-16 LTST) coverage"
+      },
+      "tier": "measured",
+      "source_ids": [
+        "meda-pds-archive"
+      ],
+      "as_of": "2022-12",
+      "valid_for": {
+        "site": "jezero",
+        "lat": 18.44,
+        "lon_e": 77.45,
+        "season": "MY36, Ls 6.1-359.9"
+      },
+      "instrument": "Perseverance MEDA ATS (calibrated level, median of the three mast sensors at 1.45 m)",
+      "display_unit": "-16 °C",
+      "notes": "Replaces the placeholder value. Maximum typically near 14.4 LTST. Ground temperature (TIRS) runs hotter at midday; this is air at 1.45 m. MEDA bundle v6.0, products CAL_ATS v1.0, CAL_ATS v2.0, DER_PS v1.0, DER_PS v2.0, DER_PS v3.0, sols 1-658; statistic of the archive computed by facts/derive/meda_my36.py (method in facts/derive/out/meda_my36.json). derive: facts/derive/out/meda_my36.json#air_temperature_k.diurnal.max_p10_p50_p90[1]"
+    },
+    {
+      "id": "jezero.temperature.my36_air_diurnal_swing",
+      "label": "Air temperature at 1.45 m, typical day-night swing",
+      "value": 65.5,
+      "unit": "K",
+      "uncertainty": {
+        "type": "range",
+        "low": 59.2,
+        "high": 73.4,
+        "note": "10th-90th percentile over 565 sols with both windows covered"
+      },
+      "tier": "measured",
+      "source_ids": [
+        "meda-pds-archive"
+      ],
+      "as_of": "2022-12",
+      "valid_for": {
+        "site": "jezero",
+        "lat": 18.44,
+        "lon_e": 77.45,
+        "season": "MY36, Ls 6.1-359.9"
+      },
+      "instrument": "Perseverance MEDA ATS (calibrated level, median of the three mast sensors at 1.45 m)",
+      "notes": "Replaces the press-release value. This swing, not the mean, is what an unheated structure must bridge every sol. MEDA bundle v6.0, products CAL_ATS v1.0, CAL_ATS v2.0, DER_PS v1.0, DER_PS v2.0, DER_PS v3.0, sols 1-658; statistic of the archive computed by facts/derive/meda_my36.py (method in facts/derive/out/meda_my36.json). derive: facts/derive/out/meda_my36.json#air_temperature_k.diurnal.swing_p10_p50_p90[1]"
+    },
+    {
+      "id": "jezero.temperature.my36_air_diurnal_by_season",
+      "label": "Air temperature at 1.45 m, typical nightly minimum and afternoon maximum by season",
+      "value": {
+        "spring": {
+          "ls": [
+            0,
+            90
+          ],
+          "min_p50_k": 193.2,
+          "max_p50_k": 254.4,
+          "swing_p50_k": 61.0,
+          "n_sols": [
+            159,
+            159
+          ]
+        },
+        "summer": {
+          "ls": [
+            90,
+            180
+          ],
+          "min_p50_k": 195.3,
+          "max_p50_k": 261.9,
+          "swing_p50_k": 67.6,
+          "n_sols": [
+            156,
+            160
+          ]
+        },
+        "autumn": {
+          "ls": [
+            180,
+            270
+          ],
+          "min_p50_k": 192.9,
+          "max_p50_k": 262.3,
+          "swing_p50_k": 69.1,
+          "n_sols": [
+            119,
+            121
+          ]
+        },
+        "winter": {
+          "ls": [
+            270,
+            360
+          ],
+          "min_p50_k": 190.2,
+          "max_p50_k": 256.6,
+          "swing_p50_k": 67.1,
+          "n_sols": [
+            152,
+            152
+          ]
+        }
+      },
+      "unit": "K",
+      "uncertainty": {
+        "type": "categorical",
+        "note": "per-season medians of sol minima/maxima; seasons are Ls quarters"
+      },
+      "tier": "measured",
+      "source_ids": [
+        "meda-pds-archive"
+      ],
+      "as_of": "2022-12",
+      "valid_for": {
+        "site": "jezero",
+        "lat": 18.44,
+        "lon_e": 77.45,
+        "season": "MY36, Ls 6.1-359.9"
+      },
+      "instrument": "Perseverance MEDA ATS (calibrated level, median of the three mast sensors at 1.45 m)",
+      "notes": "Structured companion to the diurnal records for the climate model. MEDA bundle v6.0, products CAL_ATS v1.0, CAL_ATS v2.0, DER_PS v1.0, DER_PS v2.0, DER_PS v3.0, sols 1-658; statistic of the archive computed by facts/derive/meda_my36.py (method in facts/derive/out/meda_my36.json). derive: facts/derive/out/meda_my36.json#air_temperature_k.by_season"
     }
   ]
 }

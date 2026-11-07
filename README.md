@@ -22,6 +22,7 @@ Proof of concept for the "player extends the running game" loop:
     facts/                   the sourced Mars knowledge layer (see facts/README.md)
     facts/validate.mjs       validates the fact bundles and emits facts/index.json
     terrain/*.py             PDS terrain ingestion (MOLA MEGDR, USGS HiRISE DTM) -> web/terrain/*.png + .json sidecars
+    facts/derive/            reproducible derivations: recompute.mjs (derived formulas), meda_*.py (MEDA MY36 statistics)
     web/png16.mjs            16-bit PNG decoder + heightmap sampler shared by the client and tests
     test/terrain.test.mjs    every heightmap decodes to what its sidecar claims
     test/facts.test.mjs      validator tests (each violation class has a fixture)
