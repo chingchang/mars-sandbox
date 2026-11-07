@@ -1,0 +1,73 @@
+{
+  "product": "jezero_mola_40km.png",
+  "description": "MOLA MEGDR heightmap, 40 x 40 km around the Perseverance landing site, 460 m/px, north up, x east",
+  "source_id": "mola-megdr",
+  "source": {
+    "data_set_id": "MGS-M-MOLA-5-MEGDR-L3-V1.0",
+    "product_id": "MEGT44N000HB.IMG",
+    "product_version_id": 2.0,
+    "producer": "GODDARD SPACE FLIGHT CENTER",
+    "product_creation_time": "2003-03-21T01:00:00",
+    "url": "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg128/megt44n000hb.img",
+    "img_sha256": "14022166079edafc99650f354e5a634e6eb2c2ea544b444c01cd8ee55437df36",
+    "label_sha256": "bc624a238ba6d71a770a09f959ead96f1c144970fae435b8ca5e26208b42eec5"
+  },
+  "datum": {
+    "vertical": "height above the areoid (Goddard Mars potential model GMM3 / mgm1025, degree and order 50), per the PDS label",
+    "horizontal": "IAU2000, planetocentric latitude, east-positive longitude",
+    "sphere_radius_m": 3396000.0,
+    "note": "radius is the label's A_AXIS_RADIUS, used for the local metre grid only"
+  },
+  "projection": {
+    "type": "local equirectangular tangent plane",
+    "formula": "x = R cos(lat0) (lon - lon0); y = R (lat - lat0); angles in radians",
+    "centre": {
+      "lat": 18.44,
+      "lon_e": 77.45,
+      "fact_id": "jezero.location.landing_site"
+    },
+    "x_axis": "east",
+    "y_axis": "north (row 0 is the northern edge)",
+    "sampling": "bilinear in the MEGDR grid; pixel centres at lat = MAX_LAT - (row + 0.5)/ppd",
+    "source_resolution": {
+      "pixels_per_degree": 128.0,
+      "map_scale_km_per_px": 0.463
+    }
+  },
+  "grid": {
+    "width": 87,
+    "height": 87,
+    "resolution_m": 460.0,
+    "extent_m": [
+      -19780.0,
+      19780.0,
+      -19780.0,
+      19780.0
+    ],
+    "centre_pixel": [
+      43,
+      43
+    ]
+  },
+  "encoding": {
+    "format": "PNG 16-bit greyscale",
+    "dtype": "uint16",
+    "offset_m": -2718.0,
+    "scale_m": 0.1,
+    "formula": "elevation_m = offset_m + scale_m * value",
+    "nodata": null
+  },
+  "elevation_m": {
+    "min": -2717.3254724376498,
+    "max": -1560.6226097131666,
+    "centre": -2572.6360000000022,
+    "centre_3x3_std": 7.448608734242859,
+    "centre_3x3_range": [
+      -2587.06171363998,
+      -2561.8437140871483
+    ]
+  },
+  "generated_by": "terrain/mola_jezero.py",
+  "generated_on": "2026-11-07",
+  "facts_content_hash": "1b6ff8e772ebf0383a6c9bb2a96bb358a62b52aa8f4e1aeb7a4266d5d400ca91"
+}
