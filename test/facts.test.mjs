@@ -3,10 +3,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, cpSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { validateFacts, parseSources, renderIndex } from "../facts/validate.mjs";
+import { validateFacts, parseSources, renderIndex, formulaLiterals, TIER_ORDER } from "../facts/validate.mjs";
 
 const FACTS = new URL("../facts/", import.meta.url).pathname;
 const VALIDATE = join(FACTS, "validate.mjs");
@@ -36,6 +36,7 @@ test("the committed bundles validate with no errors", () => {
   assert.deepEqual(r.errors, []);
   assert.ok(r.ok);
   assert.ok(r.index.ids.length > 20);
+  assert.ok(r.index.ids.includes("sun.solar_constant_1au") && r.index.ids.includes("astro.au"));
 });
 
 test("the committed index.json is current", () => {
@@ -46,11 +47,63 @@ test("the committed index.json is current", () => {
 test("index maps every id to its record and bundle, in file order", () => {
   const dir = fixture({ "a.json": bundle([good("x.one"), good("x.two")], "alpha"), "b.json": bundle([good("y.one")], "beta") });
   const { index } = validateFacts(dir);
+  const pkg = basename(dir);   // no package.json in the fixture, so the folder name is the package name
   assert.deepEqual(index.ids, ["x.one", "x.two", "y.one"]);
   assert.equal(index.facts["y.one"].bundle, "beta");
-  assert.deepEqual(index.bundles.alpha, { file: "a.json", version: "0.0.1", description: "", fact_count: 2 });
+  assert.deepEqual(index.bundles.alpha, { file: "a.json", package: pkg, version: "0.0.1", description: "", fact_count: 2 });
   assert.deepEqual(index.sources["nssdc-mars-factsheet"].cited_by, ["x.one", "x.two", "y.one"]);
+  assert.equal(index.facts["x.one"].package, pkg);
+  assert.equal(index.facts["x.one"].tier_rank, 0);
+  assert.deepEqual(index.tier_order, ["measured", "derived", "engineering", "modeled", "hypothesis"]);
+  assert.deepEqual(index.packages, { [pkg]: { root: ".", bundles: ["alpha", "beta"] } });
+  assert.match(index.content_hash, /^[0-9a-f]{64}$/);
   rmSync(dir, { recursive: true });
+});
+
+test("index carries source citations parsed from sources.md", () => {
+  const dir = fixture({ "t.json": bundle([good("x.one")]) });
+  const { index } = validateFacts(dir);
+  const src = index.sources["nssdc-mars-factsheet"];
+  assert.match(src.citation, /^NASA NSSDCA Planetary Fact Sheet: Mars/);
+  assert.deepEqual(src.urls, ["https://nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html"]);
+  assert.deepEqual(src.use, ["F"]);
+  assert.equal(src.verified, "2026-11-05");
+  assert.equal(src.reference_only, false);
+  const ref = index.sources["nasa-dra5"];
+  assert.equal(ref.reference_only, true);
+  assert.deepEqual(ref.use, ["R"]);
+  assert.ok(ref.urls.length >= 2);
+});
+
+test("content_hash changes with content and is stable otherwise", () => {
+  const dir = fixture({ "t.json": bundle([good("x.one")]) });
+  const h1 = validateFacts(dir).index.content_hash;
+  assert.equal(validateFacts(dir).index.content_hash, h1);
+  writeFileSync(join(dir, "t.json"), JSON.stringify(bundle([good("x.one", { value: 2 })])));
+  assert.notEqual(validateFacts(dir).index.content_hash, h1);
+});
+
+test("two package roots validate together; ids may depend across packages", () => {
+  const base = fixture({ "base.json": bundle([good("x.base")], "base") });
+  const ext = mkdtempSync(join(tmpdir(), "facts-ext-"));
+  writeFileSync(join(ext, "package.json"), JSON.stringify({ name: "lab-crops" }));
+  writeFileSync(join(ext, "sources.md"), "# Sources\n\n## lab-paper-2026\nLab et al. (2026). A crop model. https://example.org/paper\nUse: **F** crops. Verified 2026-11-06.\n");
+  writeFileSync(join(ext, "crops.json"), JSON.stringify(bundle([
+    good("crop.yield", { tier: "derived", formula: "x.base * 2", depends_on: ["x.base"], source_ids: ["lab-paper-2026"] }),
+  ], "lab-crops-bundle")));
+  const r = validateFacts([base, ext]);
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.index.ids, ["x.base", "crop.yield"]);
+  assert.equal(r.index.facts["crop.yield"].package, "lab-crops");
+  assert.equal(r.index.packages["lab-crops"].root, relative(base, ext));
+  assert.deepEqual(r.index.sources["lab-paper-2026"].cited_by, ["crop.yield"]);
+  // a duplicate id across packages is an error
+  writeFileSync(join(ext, "crops.json"), JSON.stringify(bundle([good("x.base", { source_ids: ["lab-paper-2026"] })], "lab-crops-bundle")));
+  assert.ok(validateFacts([base, ext]).errors.some(e => /duplicate id "x.base"/.test(e)));
+  // base alone does not know the extension's source
+  assert.ok(validateFacts(base).ok);
+  const r2 = spawnSync(process.execPath, [VALIDATE, "--dir", base, "--dir", ext, "--quiet"], { encoding: "utf8" });
+  assert.equal(r2.status, 1, "cli: duplicate id must fail");
 });
 
 test("schema violation: missing uncertainty", () => {
@@ -123,25 +176,60 @@ test("derived records need formula and depends_on", () => {
   hasError(dir2, /x\.emptydeps: derived record needs a non-empty depends_on/);
 });
 
-test("warnings: untraceable formula literal, APPROX, uncited source", () => {
+test("formula literals: depends_on values, small integers and unit conversions pass; anything else is an error", () => {
   const dir = fixture({ "t.json": bundle([
     good("x.base", { value: 686.98 }),
-    good("x.d", { tier: "derived", formula: "686.98 * 1361 / 2", depends_on: ["x.base"] }),
+    good("x.obj", { value: { lat: 18.44, lon_e: 77.45 } }),
+    good("x.ok", { tier: "derived", formula: "x.base * 86400 / 1000 * 2 * pi * 18.44 + 686.98^2", depends_on: ["x.base", "x.obj"] }),
+    good("x.ok2", { tier: "derived", formula: "sum(x_i * M_i) over CO2, N2, O2", depends_on: ["x.base"] }),
+    good("x.bad", { tier: "derived", formula: "686.98 * 1361 / 1.5237^2", depends_on: ["x.base"] }),
+    good("x.bad2", { tier: "modeled", formula: "x.base * 0.38", depends_on: ["x.base"] }),
+  ]) });
+  const r = validateFacts(dir);
+  assert.ok(!r.errors.some(e => /x\.ok/.test(e)), r.errors.join("\n"));
+  hasError(dir, /x\.bad: formula uses 1361, 1\.5237, which is not the value of any depends_on record/);
+  hasError(dir, /x\.bad2: formula uses 0\.38/);
+  assert.deepEqual(formulaLiterals("1361 / (1.5237*(1-0.0935))^2 + 2*pi + CO2 + 86400 + 1e3"), ["1361", "1.5237", "1", "0.0935", "2", "2", "pi", "86400", "1e3"]);
+});
+
+test("tier ordering: a record may not be stronger than its dependencies", () => {
+  assert.deepEqual(TIER_ORDER, ["measured", "derived", "engineering", "modeled", "hypothesis"]);
+  const dir = fixture({ "t.json": bundle([
+    good("x.meas"),
+    good("x.model", { tier: "modeled" }),
+    good("x.hyp", { tier: "hypothesis" }),
+    good("x.ok_derived", { tier: "derived", formula: "x.meas * 2", depends_on: ["x.meas"] }),
+    good("x.ok_modeled", { tier: "modeled", formula: "x.model * 2", depends_on: ["x.model", "x.meas"] }),
+    good("x.ok_eng", { tier: "engineering", depends_on: ["x.meas"] }),
+    good("x.bad_derived", { tier: "derived", formula: "x.model * 2", depends_on: ["x.model"] }),
+    good("x.bad_eng", { tier: "engineering", depends_on: ["x.hyp"] }),
+    good("x.bad_measured", { depends_on: ["x.model"] }),
+  ]) });
+  const r = validateFacts(dir);
+  assert.ok(!r.errors.some(e => /x\.ok_/.test(e)), r.errors.join("\n"));
+  hasError(dir, /x\.bad_derived: tier "derived" is stronger than its dependency x\.model \(modeled\)/);
+  hasError(dir, /x\.bad_eng: tier "engineering" is stronger than its dependency x\.hyp \(hypothesis\)/);
+  hasError(dir, /x\.bad_measured: tier "measured" is stronger than its dependency x\.model \(modeled\)/);
+});
+
+test("warnings: APPROX records and uncited fact sources", () => {
+  const dir = fixture({ "t.json": bundle([
     good("x.approx", { notes: "APPROX. Agent task F2." }),
   ]) });
   const r = validateFacts(dir);
   assert.deepEqual(r.errors, []);
-  assert.ok(r.warnings.some(w => /x\.d: formula uses 1361 which is not the value of any depends_on record/.test(w)), r.warnings.join("\n"));
-  assert.ok(!r.warnings.some(w => /formula uses.*686\.98/.test(w)), "686.98 is a depends_on value and must not warn");
   assert.ok(r.warnings.some(w => /x\.approx: marked APPROX/.test(w)));
   assert.ok(r.warnings.some(w => /"meda-pds-archive" is not cited by any fact/.test(w)));
 });
 
 test("parseSources: headings, (R) section and Use: **R** lines", () => {
-  const md = "# Sources\n\n## alpha-2020\nUse: **F** x\n\n## beta-2021\nUse: **R** reading only\n\n# Design references (R)\n\n## gamma-2009\nWhy it matters: ...\n";
+  const md = "# Sources\n\n## alpha-2020\nAlpha et al. (2020). Title. doi:10/x\nhttps://a.example/p (mirror: https://b.example/p)\nUse: **F** and **D** x. Verified 2026-01-02.\n\n## beta-2021\nUse: **R** reading only\n\n# Design references (R)\n\n## gamma-2009\nWhy it matters: ...\n";
   const s = parseSources(md);
   assert.deepEqual([...s.ids], ["alpha-2020", "beta-2021", "gamma-2009"]);
   assert.deepEqual([...s.referenceOnly], ["beta-2021", "gamma-2009"]);
+  assert.deepEqual(s.entries.get("alpha-2020"), { citation: "Alpha et al. (2020). Title. doi:10/x", urls: ["https://a.example/p", "https://b.example/p"], use: ["F", "D"], verified: "2026-01-02" });
+  assert.deepEqual(s.entries.get("gamma-2009").use, ["R"]);
+  assert.equal(s.entries.get("gamma-2009").citation, "Why it matters: ...");
 });
 
 test("CLI: exit 1 on a bad record, exit 0 and writes index on good input, --check detects stale index", () => {
@@ -153,7 +241,7 @@ test("CLI: exit 1 on a bad record, exit 0 and writes index on good input, --chec
   const ok = fixture({ "t.json": bundle([good("x.ok")]) });
   r = spawnSync(process.execPath, [VALIDATE, "--dir", ok], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^ok: 1 bundle\(s\), 1 fact\(s\), 0 error\(s\)/m);
+  assert.match(r.stdout, /^ok: 1 package\(s\), 1 bundle\(s\), 1 fact\(s\), 0 error\(s\)/m);
   const index = JSON.parse(readFileSync(join(ok, "index.json"), "utf8"));
   assert.deepEqual(index.ids, ["x.ok"]);
 

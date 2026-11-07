@@ -1,7 +1,7 @@
 {
   "bundle": "mars-constants",
-  "version": "0.1.0",
-  "description": "Planet-wide constants for Mars. Values from the NASA NSSDCA Mars Fact Sheet unless noted; atmospheric composition from Curiosity SAM.",
+  "version": "0.2.0",
+  "description": "Planet-wide constants for Mars, plus the two solar-system constants the derived solar-flux records need (sun.*, astro.*). Values from the NASA NSSDCA Mars Fact Sheet unless noted; atmospheric composition from Curiosity SAM.",
   "facts": [
     {
       "id": "mars.gravity.surface_equatorial",
@@ -43,7 +43,7 @@
       "label": "Length of a Mars year",
       "value": 668.6, "unit": "sol",
       "uncertainty": { "type": "plus_minus", "value": 0.1 },
-      "tier": "derived", "formula": "686.98 d * 86400 / 88775.244", "depends_on": ["mars.time.year_days", "mars.time.sol"],
+      "tier": "derived", "formula": "mars.time.year_days * 86400 / mars.time.sol", "depends_on": ["mars.time.year_days", "mars.time.sol"],
       "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
     },
     {
@@ -77,11 +77,29 @@
       "tier": "measured", "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
     },
     {
+      "id": "sun.solar_constant_1au",
+      "label": "Total solar irradiance at 1 au (solar constant)",
+      "value": 1361, "unit": "W/m^2",
+      "uncertainty": { "type": "plus_minus", "value": 0.5, "note": "the IAU 2015 nominal value is exact by definition; +/-0.5 is the uncertainty of the measured solar-cycle-23 mean it was rounded from" },
+      "tier": "measured", "instrument": "SORCE/TIM (solar-cycle-23 mean), adopted as the IAU 2015 nominal S_N",
+      "source_ids": ["prsa-2016-iau-b3"], "as_of": "2016-08",
+      "notes": "Prsa et al. 2016 state the measured cycle-23 mean as 1361 +/- 0.5 W/m^2 and that IAU 2015 Resolution B3 adopts the rounded value as the nominal solar constant. The underlying measurement paper (Kopp & Lean 2011, GRL 38, L01706) is cited there but was not reachable when this record was written, so it is not listed as a source here."
+    },
+    {
+      "id": "astro.au",
+      "label": "Astronomical unit",
+      "value": 149597870700, "unit": "m",
+      "uncertainty": { "type": "plus_minus", "value": 0, "note": "conventional unit of length, exact by definition (IAU 2012 Resolution B2)" },
+      "tier": "measured",
+      "source_ids": ["prsa-2016-iau-b3"], "as_of": "2012-08",
+      "notes": "Defined, not measured; recorded so the solar-flux formulas can reference the Sun-Mars distance ratio by id instead of quoting 1.5237 au as a bare literal. The primary document is IAU 2012 Resolution B2; its text is quoted in Prsa et al. 2016, which is what was verified."
+    },
+    {
       "id": "mars.solar.constant_mean",
       "label": "Top-of-atmosphere solar irradiance at mean distance",
       "value": 586, "unit": "W/m^2",
       "uncertainty": { "type": "plus_minus", "value": 3 },
-      "tier": "derived", "formula": "1361 W/m^2 / 1.5237^2", "depends_on": ["mars.orbit.semimajor_axis"],
+      "tier": "derived", "formula": "sun.solar_constant_1au * (astro.au / mars.orbit.semimajor_axis)^2", "depends_on": ["sun.solar_constant_1au", "astro.au", "mars.orbit.semimajor_axis"],
       "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05",
       "notes": "Perihelion ~713 W/m^2, aphelion ~490 W/m^2. Surface irradiance is further reduced by dust (see jezero.dust.optical_depth_typical)."
     },
@@ -90,7 +108,7 @@
       "label": "TOA solar irradiance at perihelion",
       "value": 713, "unit": "W/m^2",
       "uncertainty": { "type": "plus_minus", "value": 5 },
-      "tier": "derived", "formula": "1361 / (1.5237*(1-0.0935))^2", "depends_on": ["mars.orbit.semimajor_axis", "mars.orbit.eccentricity"],
+      "tier": "derived", "formula": "sun.solar_constant_1au * (astro.au / (mars.orbit.semimajor_axis * (1 - mars.orbit.eccentricity)))^2", "depends_on": ["sun.solar_constant_1au", "astro.au", "mars.orbit.semimajor_axis", "mars.orbit.eccentricity"],
       "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
     },
     {
@@ -98,7 +116,7 @@
       "label": "TOA solar irradiance at aphelion",
       "value": 490, "unit": "W/m^2",
       "uncertainty": { "type": "plus_minus", "value": 5 },
-      "tier": "derived", "formula": "1361 / (1.5237*(1+0.0935))^2", "depends_on": ["mars.orbit.semimajor_axis", "mars.orbit.eccentricity"],
+      "tier": "derived", "formula": "sun.solar_constant_1au * (astro.au / (mars.orbit.semimajor_axis * (1 + mars.orbit.eccentricity)))^2", "depends_on": ["sun.solar_constant_1au", "astro.au", "mars.orbit.semimajor_axis", "mars.orbit.eccentricity"],
       "source_ids": ["nssdc-mars-factsheet"], "as_of": "2025-05"
     },
     {
