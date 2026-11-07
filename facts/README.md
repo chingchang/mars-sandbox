@@ -109,8 +109,8 @@ Every number that is a statistic of an archive, not a quote from a paper, is
 produced by a script here, and the record's `notes` name the script and the
 output file that holds the number with its sol list, product versions and
 method. `derive/out/*.json` is committed; the raw inputs under `data/raw/`
-are not (gitignored, several GB) but the output records every file's LID,
-version and sha256 so a reviewer can refetch and recompute.
+are not (gitignored, several GB) but `derive/out/meda_manifest.json` records
+every file's URL, LID, version and sha256 so a reviewer can refetch and recompute.
 
 `derive/recompute.mjs` evaluates every `derived` record's formula with the
 values of its `depends_on` and fails when the stored value disagrees beyond
