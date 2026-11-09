@@ -17,16 +17,16 @@ world keeps it inside a sandbox where it can only touch what we allow.
 
 ```mermaid
 flowchart LR
-    P[Player] -->|"I want a beacon that lights up<br/>when a rover comes near"| WS[Workshop panel<br/>in the game page]
-    WS -->|conversation| SRV[Workshop server<br/>Node, holds the LLM key]
-    SRV -->|prompt + host API + facts| LLM[LLM]
+    P["Player"] -->|"I want a beacon that lights up<br/>when a rover comes near"| WS["Workshop panel<br/>in the game page"]
+    WS -->|conversation| SRV["Workshop server<br/>Node, holds the LLM key"]
+    SRV -->|prompt + host API + facts| LLM["LLM"]
     LLM -->|manifest + AssemblyScript| SRV
-    SRV -->|compile asc → .wasm<br/>run smoke tests<br/>retry on failure| SRV
-    SRV -->|.wasm + manifest| WS
-    WS -->|hot-load| RT[Sandbox runtime<br/>Web Workers in the browser]
-    RT <-->|host API calls| W[World state<br/>authoritative, main thread]
-    W --> R[3D view<br/>Three.js]
-    F[(facts/<br/>sourced Mars data)] --> SRV
+    SRV -->|"compile asc to .wasm<br/>run smoke tests<br/>retry on failure"| SRV
+    SRV -->|".wasm + manifest"| WS
+    WS -->|hot-load| RT["Sandbox runtime<br/>Web Workers in the browser"]
+    RT <-->|host API calls| W["World state<br/>authoritative, main thread"]
+    W --> R["3D view<br/>Three.js"]
+    F[("facts/<br/>sourced Mars data")] --> SRV
     F --> W
 ```
 
@@ -119,12 +119,12 @@ sequenceDiagram
     S-->>UI: .wasm + manifest + the explanation + fact ids it used
     UI->>RT: load(bytes, manifest) at the tapped location
     RT->>RT: verify imports against allow-list, instantiate in a new worker, init()
-    RT-->>UI: loaded; old module (if replacing) terminated only now
+    RT-->>UI: loaded, old module (if replacing) terminated only now
     loop every tick (20 Hz)
         W->>RT: sensor snapshot
         RT->>RT: module.tick(dt) inside budget
         RT-->>W: requested actions (move, spawn, state, signals)
-        W->>W: validate and apply; render
+        W->>W: validate and apply, then render
     end
 ```
 
@@ -140,19 +140,19 @@ we give the model the facts and the principle and let it ask.
 ```mermaid
 flowchart LR
     subgraph MAIN["Main thread (authoritative)"]
-        WS[World state]
-        SNAP[sensor snapshot<br/>Float32Array]
-        APPLY[validate + apply<br/>requested actions]
+        WS["World state"]
+        SNAP["sensor snapshot<br/>Float32Array"]
+        APPLY["validate + apply<br/>requested actions"]
     end
     subgraph WK["Web Worker (one per module)"]
-        HOST[host object:<br/>read, drive, spawn, pose,<br/>state_set, signal_emit, log, ...]
-        WASM[module.wasm<br/>init(), tick(dt)]
+        HOST["host object:<br/>read, drive, spawn, pose,<br/>state_set, signal_emit, log, ..."]
+        WASM["module.wasm<br/>init(), tick(dt)"]
     end
     WS --> SNAP -->|postMessage| HOST
     HOST --> WASM
     WASM -->|calls| HOST
     HOST -->|postMessage: requests| APPLY --> WS
-    WD[watchdog 400 ms<br/>budget 2 ms/tick] -.terminate on hang.-> WK
+    WD["watchdog 400 ms<br/>budget 2 ms/tick"] -.terminate on hang.-> WK
 ```
 
 What the sandbox guarantees, today, with tests:
@@ -176,13 +176,13 @@ anything, and makes the runtime hold many modules at once.
 
 ```mermaid
 flowchart LR
-    SRC[sources.md<br/>31+ cited sources] --> V[validate.mjs]
-    J[constants.json<br/>jezero.json<br/>resources.json<br/>jezero_climatology.json] --> V
-    SCH[schema.json] --> V
-    V -->|errors fail CI| IDX[index.json<br/>id → record, tier_rank,<br/>source citations, content_hash]
-    IDX --> SRVP[Workshop server prompt]
-    IDX --> HOSTK[Host API env keys]
-    IDX --> INSP[Inspector: tier badge,<br/>"did you know" with citation]
+    SRC["sources.md<br/>31+ cited sources"] --> V["validate.mjs"]
+    J["constants.json<br/>jezero.json<br/>resources.json<br/>jezero_climatology.json"] --> V
+    SCH["schema.json"] --> V
+    V -->|errors fail CI| IDX["index.json<br/>id to record, tier_rank,<br/>source citations, content_hash"]
+    IDX --> SRVP["Workshop server prompt"]
+    IDX --> HOSTK["Host API env keys"]
+    IDX --> INSP["Inspector: tier badge,<br/>'did you know' with citation"]
 ```
 
 Every number has a `tier`: `defined > measured > derived > engineering > modeled
