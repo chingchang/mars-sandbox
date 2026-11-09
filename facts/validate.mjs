@@ -27,6 +27,8 @@
 //      is an unsourced number living inside facts/, which CLAUDE.md rules out.
 //   7. a record never claims a stronger tier than any record it depends on
 //      (TIER_ORDER below; composing with weaker evidence cannot raise a tier)
+//   8. an uncertainty of type "series" has a pointer that resolves, inside the
+//      record's value, to an array (the per-point uncertainty of a series)
 //
 // Warnings (printed, never fatal):
 //   - fact sources that nothing cites
@@ -249,6 +251,12 @@ export function validateFacts(roots = HERE) {
       }
     }
     // APPROX marks a placeholder still awaiting replacement; a superseded record is history, not open work
+    if (record.uncertainty?.type === "series") {
+      const ptr = record.uncertainty.pointer ?? "";
+      let cur = record.value, ok = ptr.startsWith("value.");
+      if (ok) for (const k of ptr.split(".").slice(1)) { cur = cur && typeof cur === "object" ? cur[k] : undefined; }
+      if (!ok || !Array.isArray(cur)) errors.push(`${at}: uncertainty.pointer "${ptr}" must name an array inside value (e.g. value.day_to_day_rms)`);
+    }
     const text = `${record.notes ?? ""} ${record.uncertainty?.note ?? ""}`;
     if (!record.superseded_by && /\bapprox\b/i.test(text)) warnings.push(`${at}: marked APPROX (open task)`);
   }
