@@ -1,7 +1,7 @@
 {
   "bundle": "jezero-environment",
   "version": "0.4.0",
-  "description": "Surface environment at Jezero crater, the Mars Sandbox v0.1 region. Primary source is Perseverance MEDA. Values marked approx need to be re-derived from the PDS MEDA archive by the coding agent (see AGENT_BRIEF.md task F2).",
+  "description": "Surface environment at Jezero crater, the Mars Sandbox v0.1 region. Primary sources are Perseverance MEDA (MY36 statistics derived in facts/derive/), Mastcam-Z, MOLA and the USGS HiRISE DTM. Superseded records are kept with superseded_by; nothing is a placeholder.",
   "facts": [
     {
       "id": "jezero.location.landing_site",
