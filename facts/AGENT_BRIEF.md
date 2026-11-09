@@ -1,12 +1,16 @@
 # Brief for the coding agent, and the supervisor's review checklist
 
-You are building the knowledge layer of Mars Sandbox on top of the existing
-rover PoC in this repo. Read `README.md` in this folder first, then
-`sources.md`, then `hypotheses.md`. The JSON bundles are the deliverable you
-extend; the supervisor (a separate reviewing agent) will check your work
-against the checklist at the bottom.
+Version 2 (2026-11-09). Version 1 built the knowledge layer; this version
+turns the project toward the MVP: a player talks to the design agent and
+creates something the app has no existing concept of, and it hot-loads into
+the running world. Physics realism is deferred, deliberately, to Phase D.
 
-## Ground rules
+Read `CLAUDE.md` first, then `docs/DEV_GUIDE.md` for the component map, then
+this file. The supervisor (a separate reviewing agent) reviews every PR against
+the checklist at the bottom and posts in the repo; you do not need Ching to
+relay. Stop for review at each PR.
+
+## Ground rules (unchanged)
 
 1. **No number without a source.** If you cannot point at a paper, archive or
    instrument, do not write the number. Open an entry in `hypotheses.md` instead.
@@ -15,109 +19,148 @@ against the checklist at the bottom.
    quotes it as fact.
 3. **Replace, do not overwrite.** When a better value arrives, add
    `superseded_by` to the old record and keep it. Bump the bundle version.
-4. **Do not use your own memory of Mars.** You almost certainly remember numbers.
-   Some are wrong, some are stale, and none have provenance. Fetch and cite.
-5. **Keep the human-readable files current.** A new fact id that touches an open
-   question gets a line in `hypotheses.md`.
+4. **Do not use your own memory of Mars.** Fetch and cite.
+5. **Keep the human-readable files current.** `hypotheses.md`, `docs/DEV_GUIDE.md`
+   and this brief change when the system changes.
+6. **Keep the sandbox guarantees.** Import allow-list, sensor snapshot not state,
+   actions as requests, per-tick budget, watchdog, no gap on hot-swap. Every
+   existing test keeps passing. Append host API keys; never renumber.
+7. **One task per PR**, with a description of what was built, how it was tested,
+   which sources were added, and anything you disagreed with here and why.
 
-## Tasks, in order
+## Status
 
-### V1. Validation tooling (do this first)
-- `facts/validate.mjs`: validate every `*.json` against `schema.json`
-  (use `ajv`), check every `source_ids` entry resolves to a `## ` heading in
-  `sources.md`, check every `depends_on` resolves to an existing id, check
-  `derived` records carry a `formula`, fail the build on any violation.
-- Add it to `package.json` scripts and to CI.
-- Emit `facts/index.json`: flat id → record map plus bundle versions, for the engine.
+| Task | State |
+|---|---|
+| V1 validator + index | merged |
+| T1 terrain (MOLA + HiRISE) | merged |
+| F2 MEDA MY36 + tau from literature | PRs 3 and 4 open, approved |
+| F3 MCD climatology | in progress; finish the current PR, then stop F3 |
 
-### T1. Terrain ingestion
-- Download the MOLA MEG128 tile covering Jezero (`mola-megdr`), reproject to a
-  local metre grid centred on 18.44 N 77.45 E, export a heightmap for a 40 x 40 km
-  region at ~460 m/px as a 16-bit PNG plus a JSON sidecar (datum, scale, source, version).
-- Locate the HiRISE 1 m DTM from `stack-2020-jezero-map` supplementary material (or the
-  USGS/PDS HiRISE DTM for the landing ellipse) and export a 5 x 5 km playable region at 1 m/px.
-- Replace the procedural terrain in `web/app.html` with the real heightmap. Keep the
-  procedural one behind a flag for tests.
+## Phase C: the MVP (do these next, in order)
 
-### F2. Replace every APPROX value in `jezero.json`
-- Find the MEDA PDS bundle (`meda-pds-archive`), pull pressure and air-temperature
-  series for Mars Year 36, compute: annual pressure min/max/mean, typical diurnal
-  min/max by season, diurnal swing distribution. Write them as `measured` records with
-  the bundle id, product version and the sol range used in `notes`.
-- Pull the Mastcam-Z / RDS optical depth series for the same period; write typical,
-  10th and 90th percentile tau.
-- Record the script that produced each number under `facts/derive/` so it is reproducible.
+Goal, in one sentence: from a cold start, a player types a request for
+something nothing in the app anticipates, the design agent asks at least one
+fact-grounded question, and within two tries a working object appears where the
+player tapped, running in the sandbox, visible in the inspector.
 
-### F3. Climatology from the Mars Climate Database
-- Request MCD 6.1 access (`mcd-lmd`), or use the web interface for a first pass.
-- Generate, for Jezero, diurnal profiles of surface temperature, pressure and
-  downwelling solar flux at 12 solar longitudes for the "climatology" and "storm"
-  dust scenarios. Store as `modeled` time-series records (value = array, with the
-  MCD version and scenario in `notes`).
-- This is what the engine should use for seasons and for sites the rovers never visited.
+### R1. Multi-module runtime
+Today the runtime has one slot (the rover's controller). Make it many.
+- `runtime/` module: a registry of live objects, each with an id, owner, version,
+  position, a manifest, and zero or one module worker.
+- Load, replace and unload per object. Replacement builds the new worker beside
+  the old one and swaps only after `init()` succeeds (as today).
+- Per-object tick scheduling at 20 Hz with the existing budget and watchdog
+  applied per worker. A hung module kills only its own object.
+- The rover becomes the first object in the registry, not a special case.
+- Tests: three objects with three modules run together; one hangs and is
+  terminated while the other two keep ticking; replacing one leaves the others'
+  state untouched.
 
-### H1. Host API: expose facts to Wasm modules
-- Extend `behaviors/host.ts` with an `ENV_*` key block generated from `facts/index.json`
-  (integer key per fact id; keep keys stable by appending only).
-- `read(key)` for an env key returns the current value as computed by the engine
-  (e.g. outside temperature now), not the static mean. The static records drive the
-  engine's climate model; modules see the live state.
-- Add `fact_tier(key) -> i32` so a module can report the lowest tier it depends on.
-  The inspector shows that tier on the object.
+### X1. Generic host API and manifest
+Add the calls that let a module be anything, keeping the surface small.
+- Visuals: `spawn(shape, w, h, d, r, g, b) -> handle` with shapes box, cylinder,
+  sphere, cone, panel; `pose(handle, x, y, z, yaw, pitch)`; `remove(handle)`.
+  Handles are per-object; a module cannot touch another object's shapes. Cap at
+  32 shapes per object.
+- State: `state_set(slot, value)`; the manifest declares slot labels and units so
+  the inspector renders a panel for a type it has never seen. 16 slots.
+- Signals: `signal_emit(code, value)` and `signal_read(code) -> value` through
+  the host; the manifest declares codes it emits and codes it listens to. Signals
+  are world-scoped and expire after one tick unless re-emitted.
+- World queries: `terrain_height(x, z)`, `nearest(kind, x, z) -> distance` and
+  `nearest_bearing(kind, x, z)` for kinds rover, rock, charger, object.
+- Environment: the existing reads (time, sun, temperature, pressure, dust) stay;
+  add `fact(key) -> value` and `fact_tier(key)` backed by `facts/index.json`.
+- Manifest schema (`runtime/manifest.schema.json`): name, description, version,
+  author, state slots, signals in/out, shapes used, fact ids depended on.
+- Update `behaviors/host.ts` and the smoke test allow-list. Document every call
+  in one paragraph each in `docs/HOST_API.md`; the design agent's prompt is built
+  from that file, so its clarity is the model's success rate.
+- Tests: a hand-written module using only generic calls builds a weather station
+  (two shapes, two state slots, one signal) and runs.
 
-### P1. Primitives library (vetted physics, outside the fact base)
-- `sim/primitives/`: conduction through a layered wall, grey-body radiation to sky,
-  convective loss in thin CO2 (note: Mars convection is weak; document the correlation
-  used), PV output vs irradiance and cell temperature, battery energy balance, a
-  degree-day crop growth model, air density from p, T, M.
-- Each primitive: pure function, documented equation, unit test with a hand-computed
-  case, and a citation for the correlation.
-- The LLM design agent composes these; it must not re-derive physics in generated code.
+### W1. Workshop server
+`generate.py` becomes a service.
+- `workshop/` Node (TypeScript) server with one endpoint: POST the conversation,
+  get back either questions or `{ manifest, source, wasm, explanation, fact_ids }`.
+- System prompt assembled from `docs/HOST_API.md`, the manifest schema, one
+  example module, `facts/index.json` (ids, labels, values, tiers, citations) and
+  the principles section of `CLAUDE.md`. The model is told: ask before building
+  when the request leaves open a choice that facts bear on; cite fact ids; never
+  state a Mars number that is not in the index.
+- Compile with `asc`, run `test/smoke.mjs`, feed errors back, three tries.
+- API key from `process.env.ANTHROPIC_API_KEY` via a gitignored `.env`; add
+  `.env.example`; add a CI check that fails if anything resembling a key appears
+  in tracked files.
+- Tests: a recorded conversation produces a module that passes the smoke test
+  (mock the LLM for CI); the retry loop is exercised with a deliberately broken
+  first response.
 
-### E1. Conservation audit in the engine
-- Every component declares power in/out, heat out, mass flows. Each tick the engine
-  sums per bus and asserts energy and mass balance within tolerance. A violating
-  component is disabled and the violation logged with the component's name. This is
-  the main defence against a plausible-looking but wrong generated model.
+### W2. Workshop panel
+- A panel in `web/app.html`: conversation, the model's questions, a confirm
+  step, then build / test / load status, then the object placed at the tapped
+  location (or beside the rover if none).
+- Inspector renders the manifest's state slots and shows the weakest tier of the
+  fact ids the module depends on, with the citations from the index.
+- Every created object gets the "did you know" line: one fact the model used,
+  with its source.
+- Works on a phone-width screen (collapsible, like the HUD).
 
-### G1. Greenhouse demo (after the above)
-- A greenhouse component built only from primitives and fact reads, with a solar array
-  and battery as sibling components on the power bus, placed at Jezero in the real
-  terrain, run through a sol with MCD climatology, showing internal temperature, heater
-  power and crop state. Acceptance: with the heater off it must trend toward ambient
-  overnight; with a 2 kW array and no storage it must fail the first night; the Jan 2022
-  storm scenario must cut power by roughly the factor implied by tau = 2.
+### A1. Acceptance
+Run these five prompts from a cold start against the real model. Each must yield
+a working object within two tries, and the agent must ask at least one question
+grounded in a fact id before building. Record the transcripts under
+`workshop/acceptance/` and the pass/fail in the PR.
+1. A weather station that logs temperature every hour and raises a red flag when
+   it drops below minus 70.
+2. A beacon that lights up when any rover is within 20 metres.
+3. A solar panel that turns to track the sun and reports its output.
+4. A small creature that wanders around and hides behind rocks when the rover
+   gets close.
+5. A dust gauge that estimates how dirty the panels are from the dust optical depth.
+Tune the system prompt until at least four of five pass; report which failed and
+why. Do not special-case any prompt in code.
+
+## Phase D: realism (after the MVP demo, not before)
+
+These are unchanged from version 1 and still matter; they are simply later.
+- **H1** Host API exposes live environment from the climate model (MCD series).
+- **P1** Primitives library, trimmed to what a greenhouse needs: conduction,
+  radiation to sky, PV output, battery balance, degree-day crop. Pure, tested,
+  cited.
+- **E1** Conservation audit: power and mass ledgers per tick; violators disabled.
+- **G1** Greenhouse built from primitives, run through MCD seasons, with the
+  acceptance tests from version 1 (freezes with heater off; 2 kW array with no
+  storage fails the first night; storm scenario cuts power by the modeled factor).
+- **F4** MY37 rerun of the MEDA pipeline when the archive is complete.
+
+## Phase E: persistence and multiplayer (later)
+Owner and version fields exist from R1 so this does not require a rewrite.
 
 ## Supervisor's review checklist
 
-The reviewing agent will reject work that fails any of these. Expect it.
+**Provenance (facts PRs)**
+- [ ] Every fact has a `source_ids` entry that resolves and the source contains that number (spot-checked by fetching).
+- [ ] No tier upgraded beyond what the source supports; derived values recompute (`recompute.mjs`).
+- [ ] Nothing approximate remains without an open task or a supersession.
 
-**Provenance**
-- [ ] Every fact has a `source_ids` entry that resolves, and the cited source actually
-      contains that number (the reviewer will spot-check by fetching the source).
-- [ ] No tier has been upgraded beyond what the source supports.
-- [ ] Every `derived` value recomputes from its `depends_on` using the stated formula
-      (the reviewer will recompute).
-- [ ] Nothing marked APPROX remains without an open task or a replacement.
+**Sandbox (runtime PRs)**
+- [ ] Import allow-list, budget and watchdog still enforced; the runaway test still passes.
+- [ ] A module cannot reach another object's shapes, state or memory (test it).
+- [ ] Hot-swap leaves no gap and does not disturb other objects.
+- [ ] Host API keys appended, never renumbered; `docs/HOST_API.md` updated.
 
-**Honesty of the model**
-- [ ] Uncertainty is carried through to the UI, not dropped at the first calculation.
-- [ ] Hypotheses are labelled in the inspector when a design depends on them.
-- [ ] Player assumptions live in the world overlay, never in `facts/`.
-- [ ] The conservation audit catches a deliberately broken component (the reviewer will
-      submit one that creates energy).
+**Workshop (W1/W2 PRs)**
+- [ ] The key is read from the environment only; the tracked-files key check runs in CI.
+- [ ] The system prompt forbids Mars numbers not in the index and the acceptance transcripts show the model citing fact ids.
+- [ ] The retry loop is tested with a broken first response.
+- [ ] Nothing in the pipeline special-cases a prompt.
 
-**Engineering quality**
-- [ ] `facts/validate.mjs` runs in CI and fails on a bad record (the reviewer will add one).
-- [ ] Terrain products carry datum, scale, source and version in a sidecar.
-- [ ] Derivation scripts under `facts/derive/` reproduce every F2/F3 number from raw data.
-- [ ] Primitives have unit tests with hand-computed expected values and cited correlations.
-- [ ] Generated modules still pass the existing Wasm import allow-list and watchdog tests.
+**Intent (every PR)**
+- [ ] The player is never told "no"; constraints arrive as questions or consequences.
+- [ ] Anything not grounded in a sourced fact is labelled in the inspector.
+- [ ] Small PR, honest description, disagreements stated.
 
-**Scope discipline**
-- [ ] No physics inside `facts/`. No facts inside `sim/primitives/`.
-- [ ] No mission-architecture claims (DRA 5.0, Mars Direct, SpaceX) stored as facts.
-- [ ] No new simulation capability was added without a test that would fail if it were wrong.
-
-When you disagree with a checklist item, say so in the PR description with the
+When you disagree with this brief, say so in the PR description with the
 reason. The supervisor would rather argue than discover a silent workaround.
