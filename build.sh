@@ -12,5 +12,5 @@ for f in "${files[@]}"; do
   npx asc "$f" -o "build/$name.wasm" -t "build/$name.wat" \
     --runtime stub -O3 --noAssert --disable bulk-memory \
     --use abort= 2>&1
-  echo "built build/$name.wasm ($(stat -c %s build/$name.wasm) bytes)"
+  echo "built build/$name.wasm ($(wc -c < "build/$name.wasm" | tr -d " ") bytes)"
 done

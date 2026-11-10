@@ -14,6 +14,13 @@
 // Worker creation is injected (spawnWorker) so the same code runs in the
 // browser (module Web Worker) and in Node tests (worker_threads).
 //
+// The registry is the host boundary: every action an object requests is
+// validated here (finite numbers, clamped ranges, slot indices) before the host
+// sees it, whatever the worker did. Known limit: during a replace, the new
+// worker gets a copy of object.mem when the load is posted; mem_set calls the
+// old module makes in the few milliseconds before the swap land in object.mem
+// but not in the new module's copy.
+//
 // Events (onEvent): {type:"state", id, state, label} | {type:"log", id, level, text}
 //                   | {type:"actions", id, object, actions} | {type:"loaded", id, imports}
 //                   | {type:"unloaded", id, reason}
@@ -86,9 +93,11 @@ export class Registry {
         if (m.type === "loaded") {
           clearTimeout(killer);
           if (object.module?.worker) { object.module.worker.terminate(); this.#emit({ type: "log", id, level: "host", text: `old module "${object.module.name}" terminated` }); }
-          object.module = { name, worker: w, enabled: true, state: "running", inflight: false, lastSent: 0, over: 0, avgMs: 0, ticks: 0, imports: m.imports, logNames };
-          object.version += object.module ? 0 : 0;
-          w.onMessage(msg => this.#onWorkerMessage(object, msg));
+          const replaced = !!object.module;
+          object.module = { name, worker: w, enabled: true, state: "running", inflight: false, lastSent: 0, over: 0, avgMs: 0, ticks: 0, imports: m.imports, logNames, badActions: 0 };
+          if (replaced) object.version += 1;                  // "radar v2": the object's version counts successful replacements
+          // bind the handler to this worker: a message from a worker that is no longer the object's module is ignored
+          w.onMessage(msg => { if (object.module?.worker === w) this.#onWorkerMessage(object, msg); });
           this.#applyActions(object, m.actions);
           this.#emit({ type: "loaded", id, imports: m.imports });
           this.#emit({ type: "state", id, state: "running", label: "running" });
@@ -140,7 +149,7 @@ export class Registry {
 
   stats(id) {
     const o = this.#need(id), m = o.module;
-    return m ? { name: m.name, enabled: m.enabled, ticks: m.ticks, avgMs: m.avgMs, over: m.over, imports: m.imports } : null;
+    return m ? { name: m.name, enabled: m.enabled, ticks: m.ticks, avgMs: m.avgMs, over: m.over, imports: m.imports, badActions: m.badActions } : null;
   }
 
   #onWorkerMessage(object, m) {
@@ -160,8 +169,24 @@ export class Registry {
     } else mod.over = 0;
   }
 
-  #applyActions(object, a) {
-    for (const [i, v] of a.mem) if (i >= 0 && i < MEM_SLOTS) object.mem[i] = v;   // host-owned memory, per object
+  /** Host-side validation of a worker's actions; returns a sanitised copy and counts what was dropped. */
+  static sanitizeActions(a) {
+    let bad = 0;
+    const num = (v, lo, hi) => { if (!Number.isFinite(v)) { bad++; return 0; } return Math.max(lo, Math.min(hi, v)); };
+    const out = { throttle: num(a.throttle, -1, 1), steer: num(a.steer, -1, 1), arm: null, led: null, logs: [], mem: [], ms: Number.isFinite(a.ms) ? a.ms : undefined };
+    if (a.arm !== null && a.arm !== undefined) out.arm = num(a.arm, 0, 1);
+    if (Array.isArray(a.led) && a.led.length === 3) out.led = a.led.map(v => num(v, 0, 1));
+    for (const e of Array.isArray(a.logs) ? a.logs : []) { if (Array.isArray(e) && Number.isInteger(e[0]) && Number.isFinite(e[1])) out.logs.push([e[0], e[1]]); else bad++; }
+    for (const e of Array.isArray(a.mem) ? a.mem : []) { if (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < MEM_SLOTS && Number.isFinite(e[1])) out.mem.push([e[0], e[1]]); else bad++; }
+    return { actions: out, bad };
+  }
+
+  #applyActions(object, raw) {
+    const { actions: a, bad } = Registry.sanitizeActions(raw);
+    if (bad && object.module && object.module.badActions++ === 0) {
+      this.#emit({ type: "log", id: object.id, level: "err", text: `"${object.module.name}" on "${object.id}" sent non-finite or malformed values; they were dropped (reported once)` });
+    }
+    for (const [i, v] of a.mem) object.mem[i] = v;   // host-owned memory, per object
     object.lastActions = a;
     for (const [c, v] of a.logs) this.#emit({ type: "log", id: object.id, level: "mod", text: `${object.module?.name ?? "?"}: ${object.module?.logNames?.[c] ?? ("code " + c)} ${Number.isFinite(v) ? v.toFixed(2) : v}` });
     this.#emit({ type: "actions", id: object.id, object, actions: a });

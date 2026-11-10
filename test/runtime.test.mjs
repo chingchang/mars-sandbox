@@ -111,6 +111,47 @@ test("an illegal import is rejected before instantiation and keeps the old modul
   reg.unload("x");
 });
 
+test("non-finite values from a hostile module never reach the host: zeroed or dropped, memory untouched, reported once", async () => {
+  const { reg, events, run } = makeWorld();
+  reg.add({ id: "h" });
+  const memBefore = Float32Array.from(reg.get("h").mem);
+  await reg.load("h", { name: "nonfinite", bytes: wasm("nonfinite") });
+  await run(12);
+  const acts = events.filter(e => e.type === "actions" && e.id === "h").map(e => e.actions);
+  assert.ok(acts.length >= 10, "hostile module kept ticking (bad values are not a crime, they are just dropped)");
+  for (const a of acts) {
+    assert.ok(Number.isFinite(a.throttle) && Number.isFinite(a.steer), "throttle/steer finite");
+    assert.equal(a.throttle, 0); assert.equal(a.steer, 0);
+    if (a.arm !== null) assert.equal(a.arm, 0);
+    if (a.led) for (const v of a.led) assert.ok(Number.isFinite(v) && v >= 0 && v <= 1);
+    for (const [, v] of a.logs) assert.ok(Number.isFinite(v));
+    for (const [i, v] of a.mem) assert.ok(Number.isInteger(i) && Number.isFinite(v));
+  }
+  assert.ok(acts.some(a => a.logs.some(([c, v]) => c === 8 && v === 1)), "the finite log still arrives");
+  assert.ok(!acts.some(a => a.logs.some(([c]) => c === 7)), "the NaN log is dropped");
+  assert.deepEqual(Float32Array.from(reg.get("h").mem), memBefore, "object memory untouched by Infinity/NaN writes");
+  // host-side boundary check, independent of the worker: feed raw garbage straight into the sanitiser
+  const { actions, bad } = Registry.sanitizeActions({ throttle: NaN, steer: Infinity, arm: -Infinity, led: [NaN, 2, -1], logs: [[1, NaN], [2, 3], "x"], mem: [[0, Infinity], [70, 1], [1, 0.5]], ms: NaN });
+  assert.deepEqual(actions, { throttle: 0, steer: 0, arm: 0, led: [0, 1, 0], logs: [[2, 3]], mem: [[1, 0.5]], ms: undefined });
+  assert.equal(bad, 8);   // throttle, steer, arm, one LED NaN, one NaN log, one malformed log, one Infinity mem write, one out-of-range slot
+  const errs = events.filter(e => e.type === "log" && e.level === "err" && e.id === "h");
+  assert.equal(errs.length, 0, "worker-side validation means the registry sees clean actions from this module");
+  reg.unload("h");
+});
+
+test("version increments on each successful replace, not on a rejected one", async () => {
+  const { reg, run } = makeWorld();
+  reg.add({ id: "v", version: 1 });
+  await reg.load("v", { name: "patrol", bytes: wasm("patrol") });
+  assert.equal(reg.get("v").version, 1, "first load is not a replace");
+  await reg.load("v", { name: "seek_target", bytes: wasm("seek_target") });
+  assert.equal(reg.get("v").version, 2);
+  await assert.rejects(reg.load("v", { name: "evil", bytes: EVIL }));
+  assert.equal(reg.get("v").version, 2, "a rejected replace does not bump the version");
+  await run(3);
+  reg.unload("v");
+});
+
 test("objects carry owner and version; remove unloads; unknown ids throw", async () => {
   const { reg } = makeWorld();
   const o = reg.add({ id: "o1", owner: "carol", version: 3, manifest: { name: "thing" } });

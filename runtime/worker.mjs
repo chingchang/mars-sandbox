@@ -27,16 +27,21 @@ export const SENSOR_COUNT = 14, MEM_SLOTS = 64;
 
 let instance = null, sensors = new Float32Array(SENSOR_COUNT), mem = new Float32Array(MEM_SLOTS);
 let act = null;
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// Every numeric argument is validated here: a non-finite number (NaN, +/-Infinity)
+// is treated as 0 by the clamped actuators and makes mem_set and log ignore the
+// call. Math.max/min pass NaN through, so the check must come first. The registry
+// validates again on the host side; this is defence in depth, not the boundary.
+const fin = v => (Number.isFinite(v) ? v : 0);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, fin(v)));
 function freshActions() { return { throttle: 0, steer: 0, arm: null, led: null, logs: [], mem: [] }; }
 const host = {
   read: k => (k >= 0 && k < SENSOR_COUNT) ? sensors[k | 0] : 0,
   drive: (t, s) => { act.throttle = clamp(t, -1, 1); act.steer = clamp(s, -1, 1); },
   set_arm: a => { act.arm = clamp(a, 0, 1); },
   set_led: (r, g, b) => { act.led = [r, g, b].map(v => clamp(v, 0, 1)); },
-  log: (c, v) => { if (act.logs.length < 8) act.logs.push([c | 0, v]); },
+  log: (c, v) => { if (Number.isFinite(v) && act.logs.length < 8) act.logs.push([c | 0, v]); },
   mem_get: i => (i >= 0 && i < MEM_SLOTS) ? mem[i | 0] : 0,
-  mem_set: (i, v) => { if (i >= 0 && i < MEM_SLOTS) { mem[i | 0] = v; act.mem.push([i | 0, v]); } },
+  mem_set: (i, v) => { if (i >= 0 && i < MEM_SLOTS && Number.isFinite(v)) { mem[i | 0] = v; act.mem.push([i | 0, v]); } },
 };
 
 onMessage(async m => {
