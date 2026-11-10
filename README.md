@@ -1,6 +1,6 @@
 # Mars Sandbox PoC: hot-loading LLM-written Wasm behaviors
 
-Proof of concept for the "player extends the running game" loop:
+Proof of concept for the "player extends the running game" loop. For the component map, definitions and stack, read `docs/DEV_GUIDE.md`.
 
     player prompt -> LLM writes AssemblyScript against a tiny host API
                   -> asc compiles it to Wasm (hundreds of bytes)
