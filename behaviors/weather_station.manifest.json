@@ -1,6 +1,6 @@
 {
   "name": "weather station",
-  "description": "A mast with a panel that counts sols, pulses a signal every Mars hour, and shows the reference air temperature at Jezero from the fact base.",
+  "description": "A mast with a panel that counts sols, shows the air temperature now, pulses a signal every Mars hour, and raises a red flag when it is colder than -70 C.",
   "version": 1,
   "author": "sample",
   "state": [
@@ -11,8 +11,13 @@
     },
     {
       "slot": 1,
-      "label": "reference air temperature (MY36 annual mean)",
+      "label": "air temperature now (typical hour, MY36)",
       "unit": "K"
+    },
+    {
+      "slot": 2,
+      "label": "cold flag (below -70 C)",
+      "unit": "flag"
     }
   ],
   "signals": {
@@ -24,13 +29,13 @@
       }
     ]
   },
-  "shapes": 2,
+  "shapes": 3,
   "fact_ids": [
-    "jezero.temperature.my36_air_annual_mean",
+    "jezero.temperature.my36_air_hourly_mean",
     "mars.time.sol"
   ],
   "did_you_know": {
-    "text": "The mean air temperature at Jezero over Mars Year 36 was 218.6 K, about -55 C, measured by Perseverance's MEDA at 1.45 m.",
-    "fact_id": "jezero.temperature.my36_air_annual_mean"
+    "text": "At Jezero the air at 1.45 m typically falls to about 193 K (-80 C) just before dawn and climbs to about 257 K (-16 C) mid-afternoon, measured by Perseverance over a full Mars year.",
+    "fact_id": "jezero.temperature.my36_air_hourly_mean"
   }
 }

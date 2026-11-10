@@ -19,6 +19,8 @@ const facts = buildFactTable(INDEX, KEYS);
 const spawn = await nodeSpawner(new URL("../runtime/worker.mjs", import.meta.url));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const SOL = INDEX.facts["mars.time.sol"].value;
+const CURVE = INDEX.facts["jezero.temperature.my36_air_hourly_mean"].value.series;
+const airTempAt = t => { const h = ((t / SOL) % 1) * 24, i = Math.floor(h), f = h - i; return CURVE[i] * (1 - f) + CURVE[Math.min(24, i + 1)] * f; };
 
 const registries = [];
 after(() => { for (const reg of registries) for (const o of reg.list()) if (o.module) reg.unload(o.id, "test teardown"); });
@@ -32,29 +34,70 @@ function makeWorld() {
     world: { terrain: { n, res, cx: c, cz: c, data }, entities: () => Float32Array.from(reg.list().flatMap(o => [o.kind === "rover" ? 0 : 3, o.position.x, o.position.z, o.index])) } });
   registries.push(reg);
   const t = { value: 0 };
-  const sensorsFor = o => { const s = new Float32Array(SENSOR_COUNT); s[0] = o.position.x; s[1] = o.position.z; s[2] = o.position.yaw; s[6] = t.value; s[10] = 99; s[12] = 99; return s; };
+  const sensorsFor = o => { const s = new Float32Array(SENSOR_COUNT); s[0] = o.position.x; s[1] = o.position.z; s[2] = o.position.yaw; s[6] = t.value; s[10] = 99; s[12] = 99; s[14] = airTempAt(t.value); return s; };
   const run = async (steps, dtSim = 0.05, pause = 25) => { for (let i = 0; i < steps; i++) { reg.tick(performance.now(), sensorsFor); t.value += dtSim; await sleep(pause); } };
   return { reg, events, run, t };
 }
 
 test("weather station: two shapes, two state slots from facts, an hourly signal, tier reported", async () => {
-  const { reg, events, run } = makeWorld();
+  const { reg, events, run, t } = makeWorld();
   reg.add({ id: "ws", position: { x: 10, z: 0 } });
   await reg.load("ws", { name: "weather_station", bytes: wasm("weather_station"), manifest: STATION_MANIFEST, logNames: { 30: "hour", 31: "tier" } });
   assert.equal(reg.get("ws").manifest.name, "weather station");
   const spawns = events.filter(e => e.type === "spawn" && e.id === "ws");
-  assert.equal(spawns.length, 2); assert.deepEqual(spawns.map(s => s.spec.shape), [1, 4]);
-  assert.equal(reg.get("ws").shapes.size, 2);
+  assert.ok(spawns.length >= 2); assert.deepEqual(spawns.slice(0, 2).map(s => s.spec.shape), [1, 4]);
+  assert.ok(reg.get("ws").shapes.size >= 2 && reg.get("ws").shapes.size <= 3);
   assert.ok(events.some(e => e.type === "pose" && e.handle === 0 && Math.abs(e.pose.y - 1.0) < 1e-6));
   const tier = events.find(e => e.type === "log" && e.id === "ws" && /tier/.test(e.text));
-  assert.match(tier.text, /tier 1\.00/, "the MY36 annual mean is measured (rank 1)");
+  assert.match(tier.text, /tier 1\.00/, "the hourly record behind the live read is measured (rank 1)");
   await run(6, SOL / 24 + 1);                                          // each tick advances one Mars hour
   const slots = reg.get("ws").state;
-  assert.ok(Math.abs(slots[1] - INDEX.facts["jezero.temperature.my36_air_annual_mean"].value) < 1e-3, `slot 1 = fact value, got ${slots[1]}`);
+  assert.ok(Math.abs(slots[1] - airTempAt(t.value - (SOL / 24 + 1))) < 0.5, `slot 1 = live air temperature, got ${slots[1]}`);
   assert.ok(slots[0] > 0.2 && slots[0] < 0.3, `sols elapsed ${slots[0]}`);
   const pulses = events.filter(e => e.type === "signal" && e.id === "ws" && e.code === 100);
   assert.ok(pulses.length >= 5, `hour pulses ${pulses.length}`);
   assert.ok(reg.nextSignals.has(100) || reg.signals.has(100), "the last pulse is queued for the next tick");
+});
+
+test("the hourly MY36 air-temperature record: 25 periodic points, minimum and maximum near the typical records and their times", () => {
+  const r = INDEX.facts["jezero.temperature.my36_air_hourly_mean"];
+  assert.equal(r.tier, "measured"); assert.equal(r.uncertainty.type, "series"); assert.equal(r.uncertainty.pointer, "value.day_to_day_rms");
+  assert.equal(CURVE.length, 25); assert.equal(CURVE[24], CURVE[0]); assert.equal(r.value.day_to_day_rms.length, 25);
+  assert.deepEqual(r.value.axes.local_time_ltst_h, Array.from({ length: 25 }, (_, i) => i));
+  const min = Math.min(...CURVE), max = Math.max(...CURVE), hMin = CURVE.indexOf(min), hMax = CURVE.indexOf(max);
+  const typMin = INDEX.facts["jezero.temperature.my36_air_diurnal_min"], typMax = INDEX.facts["jezero.temperature.my36_air_diurnal_max"];
+  // the curve is an hourly mean over all seasons; the typical records are medians of each sol's instantaneous
+  // extreme, so the curve sits inside them: a little above the minimum, several kelvin below the maximum
+  assert.ok(min >= typMin.value - 2 && min <= typMin.value + 6, `curve min ${min} vs typical minimum ${typMin.value}`);
+  assert.ok(max <= typMax.value + 2 && max >= typMax.value - 12, `curve max ${max} vs typical maximum ${typMax.value}`);
+  assert.ok(hMin >= 4 && hMin <= 6, `coldest hour ${hMin} (typical minimum near 05:20 LTST)`);
+  assert.ok(hMax >= 13 && hMax <= 15, `warmest hour ${hMax} (typical maximum near 14:25 LTST)`);
+  assert.ok(r.value.day_to_day_rms.every(v => v > 0 && v < 30));
+  assert.equal(KEYS.keys["jezero.temperature.my36_air_hourly_mean"] !== undefined, true, "the table record has a key so fact_tier() can serve its tier");
+  assert.ok(Number.isNaN(facts.values[KEYS.keys["jezero.temperature.my36_air_hourly_mean"]]) && facts.tiers[KEYS.keys["jezero.temperature.my36_air_hourly_mean"]] === 1);
+});
+
+test("weather station over one sol: hourly temperature logs, flag up at night and down in the morning", async () => {
+  const { reg, events, run } = makeWorld();
+  reg.add({ id: "ws" });
+  await reg.load("ws", { name: "weather_station", bytes: wasm("weather_station"), manifest: STATION_MANIFEST, logNames: { 30: "hourly temp", 32: "flag" } });
+  await run(30, SOL / 24, 20);                                        // 30 ticks, one Mars hour each: 1.25 sols
+  const ws = reg.get("ws");
+  const flagLogs = events.filter(e => e.type === "log" && e.id === "ws" && /flag/.test(e.text)).map(e => +e.text.split(" ").at(-1));
+  assert.ok(flagLogs.length >= 2, `flag changed at least twice: ${flagLogs.join(",")}`);
+  assert.ok(flagLogs.includes(1) && flagLogs.includes(0), "flag went both up (night) and down (day)");
+  const hourly = events.filter(e => e.type === "log" && e.id === "ws" && /hourly temp/.test(e.text));
+  assert.ok(hourly.length >= 24, `${hourly.length} hourly logs over 1.25 sols`);
+  // state at a known cold hour and a known warm hour
+  const { reg: reg2, run: run2, t: t2 } = makeWorld();
+  reg2.add({ id: "w2" }); await reg2.load("w2", { name: "weather_station", bytes: wasm("weather_station") });
+  t2.value = 5 * SOL / 24; await run2(2, 0, 20);
+  assert.equal(reg2.get("w2").state[2], 1, "05:00: flag up"); assert.ok(reg2.get("w2").state[1] < 203.15);
+  assert.equal(reg2.get("w2").shapes.size, 3, "mast, panel and the red cone");
+  t2.value = 14 * SOL / 24; await run2(2, 0, 20);
+  assert.equal(reg2.get("w2").state[2], 0, "14:00: flag down"); assert.ok(reg2.get("w2").state[1] > 203.15);
+  assert.equal(reg2.get("w2").shapes.size, 2, "cone removed");
+  reg.unload("ws"); reg2.unload("w2");
 });
 
 test("beacon: nearest(rover), terrain_height, signal_read across objects, re-spawn on state change", async () => {

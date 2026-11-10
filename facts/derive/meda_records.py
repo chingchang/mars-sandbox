@@ -86,6 +86,16 @@ def main():
             "air_temperature_k.by_season",
             "Structured companion to the diurnal records for the climate model.", ATS),
     ]
+    hc = t["hourly_record"]
+    records.append({
+        "id": "jezero.temperature.my36_air_hourly_mean",
+        "label": "Air temperature at 1.45 m, typical day over MY36: mean for each local true solar hour",
+        "value": {k: hc[k] for k in ("variable", "axes", "series", "day_to_day_rms")}, "unit": "K",
+        "uncertainty": {"type": "series", "pointer": "value.day_to_day_rms", "note": f"standard deviation across sols for each hour ({min(hc['n_sols'])}-{max(hc['n_sols'])} sols per hour); seasons are pooled, so most of the spread is seasonal"},
+        **base, "instrument": ATS,
+        "notes": ("All seasons pooled: this is the typical temperature for an hour of the day over one measured Mars year, not today's weather and not a seasonal model. "
+                  "series[j] is at axes.local_time_ltst_h[j]; hour 24 repeats hour 0. Backs the live ENV_AIR_TEMP_K sensor (task L1)." + prov + f" derive: {LINK}#air_temperature_k.hourly_record"),
+    })
     supersede = {
         "jezero.pressure.annual_envelope": "jezero.pressure.my36_daily_mean",
         "jezero.temperature.air_annual_mean": "jezero.temperature.my36_air_annual_mean",

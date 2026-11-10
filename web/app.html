@@ -68,6 +68,7 @@
       <div class="stat"><b>solar</b><span id="s-solar">0 W</span></div>
       <div class="stat"><b>speed</b><span id="s-speed">0.0 m/s</span></div>
       <div class="stat"><b>position</b><span id="s-pos">0, 0</span></div>
+      <div class="stat" title="Typical air temperature for this hour over one measured Mars year (Perseverance MEDA, MY36, tier measured). Not today's weather; no seasons."><b>air temp</b><span id="s-temp">—</span></div>
       <div class="stat"><b>tick budget</b><span id="s-budget">2.0 ms</span></div>
       <div class="stat"><b>module imports</b><span id="s-imports">—</span></div>
     </div>
@@ -247,7 +248,7 @@ function sensorSnapshot() {
     let b=Math.atan2(dx,dz)-W.h; while(b>Math.PI)b-=2*Math.PI; while(b<-Math.PI)b+=2*Math.PI;
     if (Math.abs(b) < 0.6 && d < od) { od = Math.max(0,d); os = b >= 0 ? 1 : -1; }
   }
-  return Float32Array.from([W.x, W.z, W.h, W.speed, W.bat, solarW(), W.t, cd, cb, slope, od, os, td, tb]);
+  return Float32Array.from([W.x, W.z, W.h, W.speed, W.bat, solarW(), W.t, cd, cb, slope, od, os, td, tb, envAirTempK()]);
 }
 function sunElev() { return Math.sin(W.t/DAY*2*Math.PI + 0.9); }
 function solarW() { return Math.max(0, sunElev())*120 * (1-0.3*Math.abs(Math.sin(W.h))); }
@@ -288,9 +289,18 @@ function physics(dt) {
 const workerTerrain = (() => { const res = 16, n = Math.floor(Math.min(SIZE, 5000) / res) | 1, c = (n - 1) / 2, data = new Float32Array(n * n);
   for (let r = 0; r < n; r++) for (let col = 0; col < n; col++) data[r * n + col] = h((col - c) * res, (r - c) * res);
   return { n, res, cx: c, cz: c, data }; })();
+let airTempCurve = null;    // jezero.temperature.my36_air_hourly_mean: 25 hourly means, hour 24 == hour 0
 const factTable = await (async () => { try {
   const [index, keys] = await Promise.all([fetch("facts/index.json").then(r => r.json()), fetch("runtime/fact_keys.json").then(r => r.json())]);
+  airTempCurve = index.facts["jezero.temperature.my36_air_hourly_mean"]?.value?.series ?? null;
   return buildFactTable(index, keys); } catch (e) { console.warn("fact table unavailable", e); return null; } })();
+// local true solar hour of the world clock, defined so 12 h is the sun's highest elevation (see sunElev)
+function localHour() { const frac = ((W.t / DAY * 2 * Math.PI + 0.9 - Math.PI / 2) / (2 * Math.PI)) % 1; return ((frac + 1) % 1) * 24 + 12 - 24 * Math.floor((((frac + 1) % 1) * 24 + 12) / 24); }
+function envAirTempK() {
+  if (!airTempCurve) return 0;
+  const h = localHour(), i = Math.floor(h), f = h - i;
+  return airTempCurve[i] * (1 - f) + airTempCurve[Math.min(24, i + 1)] * f;
+}
 const registry = new Registry({ spawnWorker: browserSpawner(new URL("./runtime/worker.mjs", location.href)), onEvent: onRegistryEvent,
   world: { terrain: workerTerrain, entities: () => {
     const out = [];
@@ -350,7 +360,7 @@ function onShapeEvent(ev) {
 function sensorsForObject(obj) {
   if (obj.id === ROVER_ID) return sensorsCache;
   const p = obj.position, [cd, cb] = (() => { const dx = CHARGER.x - p.x, dz = CHARGER.z - p.z; let b = Math.atan2(dx, dz) - p.yaw; while (b > Math.PI) b -= 2*Math.PI; while (b < -Math.PI) b += 2*Math.PI; return [Math.hypot(dx, dz), b]; })();
-  return Float32Array.from([p.x, p.z, p.yaw, p.speed ?? 0, 1, solarW(), W.t, cd, cb, 0, 99, 0, 99, 0]);
+  return Float32Array.from([p.x, p.z, p.yaw, p.speed ?? 0, 1, solarW(), W.t, cd, cb, 0, 99, 0, 99, 0, envAirTempK()]);
 }
 function applyObjectActions(obj, a) {
   const p = obj.position; p.throttle = a.throttle; p.steer = a.steer;
@@ -484,6 +494,7 @@ function frame(now) {
     el("s-solar").textContent = solarW().toFixed(0) + " W";
     el("s-speed").textContent = Math.abs(W.speed).toFixed(1) + " m/s";
     el("s-pos").textContent = `${W.x.toFixed(0)}, ${W.z.toFixed(0)}`;
+    el("s-temp").textContent = airTempCurve ? `${envAirTempK().toFixed(0)} K (${(envAirTempK() - 273.15).toFixed(0)} °C) at ${localHour().toFixed(1)} h` : "—";
   }
   renderer.render(scene, camera);
 }

@@ -169,8 +169,29 @@ def selftest():
     assert sm["n_sols"] == 3 and sm["annual"]["n_sols_for_mean"] == 2 and sm["annual"]["mean_of_daily_means"] == 710.0
     assert sm["annual"]["daily_mean_max"][1] == 3 and sm["diurnal"]["n_sols_swing"] == 2
     assert sm["by_season"]["autumn"]["daily_mean_p50"] == 720.0 and sm["by_season"]["summer"]["n_sols_min"] == 0
+    hc = hourly_curve(by_sol, "ps")
+    assert len(hc["series"]) == 25 and hc["series"][24] == hc["series"][0] and hc["n_sols"][12] == 2 and hc["n_sols"][20] == 3
+    assert abs(hc["series"][15] - full["hourly_mean"][15]) < 0.01, "sol 1 and 3 share the same profile; sol 2 only has night hours (values rounded to 0.01)"
+    assert hc["day_to_day_rms"][15] == 0.0 and hc["n_sols"][15] == 2
     print("selftest ok")
     return 0
+
+
+def hourly_curve(by_sol: dict, key: str) -> dict:
+    """Typical-day curve: for each local true solar hour, the mean over sols of that sol's hourly
+    mean, and the spread (standard deviation) across sols. All seasons pooled; a sol contributes to
+    an hour only if it sampled that hour. Hour 24 repeats hour 0 so the table matches the
+    climatology records (25 points, periodic)."""
+    rows = [r for r in by_sol.values() if key in r and r[key].get("n", 0) > 0]
+    means, spread, n_sols = [], [], []
+    for h in range(24):
+        vals = [r[key]["hourly_mean"][str(h)] if str(h) in r[key]["hourly_mean"] else r[key]["hourly_mean"].get(h) for r in rows]
+        vals = [v for v in vals if v is not None]
+        means.append(float(np.mean(vals))); spread.append(float(np.std(vals))); n_sols.append(len(vals))
+    means.append(means[0]); spread.append(spread[0]); n_sols.append(n_sols[0])
+    return {"variable": "t_air_1p45m", "axes": {"local_time_ltst_h": list(range(25))}, "series": [round(v, 2) for v in means],
+            "day_to_day_rms": [round(v, 2) for v in spread], "n_sols": n_sols,
+            "method": "mean over MY36 sols of each sol's hourly mean (LTST hour bins); day_to_day_rms is the standard deviation across sols; hour 24 repeats hour 0"}
 
 
 def main():
@@ -189,13 +210,14 @@ def main():
         "product_versions": [f"{k} v{v}" for k, v in versions],
         "method": __doc__.strip(),
         "pressure_pa": summarise(by_sol, "ps"),
-        "air_temperature_k": summarise(by_sol, "ats"),
+        "air_temperature_k": {**summarise(by_sol, "ats"), "hourly_record": hourly_curve(by_sol, "ats")},
         "generated_by": "facts/derive/meda_my36.py", "generated_on": time.strftime("%Y-%m-%d"),
     }
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "meda_my36.json").write_text(json.dumps(summary, indent=1) + "\n")
     p, t = summary["pressure_pa"], summary["air_temperature_k"]
     print(f"pressure: {p['n_sols']} sols; annual mean {p['annual']['mean_of_daily_means']:.1f} Pa; daily means {p['annual']['daily_mean_min'][0]:.1f}..{p['annual']['daily_mean_max'][0]:.1f}; swing p50 {p['diurnal']['swing_p10_p50_p90'][1]:.1f}")
+    hc = t["hourly_record"]; print(f"air T hourly curve: min {min(hc['series']):.1f} K at {hc['series'].index(min(hc['series']))} h, max {max(hc['series']):.1f} K at {hc['series'].index(max(hc['series']))} h; spread {min(hc['day_to_day_rms']):.1f}-{max(hc['day_to_day_rms']):.1f} K")
     print(f"air T: {t['n_sols']} sols; annual mean {t['annual']['mean_of_daily_means']:.1f} K; min p50 {t['diurnal']['min_p10_p50_p90'][1]:.1f}; max p50 {t['diurnal']['max_p10_p50_p90'][1]:.1f}; swing p50 {t['diurnal']['swing_p10_p50_p90'][1]:.1f}")
     for s, v in t["by_season"].items():
         print(f"  {s:7s} Ls {v['ls']}: T min p50 {v['min_p10_p50_p90'][1]} max p50 {v['max_p10_p50_p90'][1]} ({v['n_sols_min']}/{v['n_sols_max']} sols); p daily mean p50 {p['by_season'][s]['daily_mean_p50']}")

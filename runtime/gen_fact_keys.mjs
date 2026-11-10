@@ -18,19 +18,20 @@ export const constName = id => "FACT_" + id.toUpperCase().replace(/[^A-Z0-9]+/g,
 
 export function assignKeys(index, existing = { keys: {}, next: 0 }) {
   const keys = { ...existing.keys }; let next = existing.next;
-  for (const id of index.ids) {
-    if (typeof index.facts[id].value !== "number") continue;      // objects and strings have no scalar key
-    if (!(id in keys)) keys[id] = next++;
-  }
+  // every fact gets a key so fact_tier() works for any record; fact() returns NaN for a table or text value.
+  // Scalar facts were keyed first (0..57); later additions of any kind append.
+  for (const id of index.ids) { if (typeof index.facts[id].value === "number" && !(id in keys)) keys[id] = next++; }
+  for (const id of index.ids) { if (!(id in keys)) keys[id] = next++; }
   return { keys, next };
 }
 
 export function hostBlock(index, keys) {
-  const lines = [BEGIN, "// fact(key) -> f32 value in the record's unit; fact_tier(key) -> i32 rank in", "// facts/index.json tier_order (0 defined ... 5 hypothesis), -1 for an unknown key."];
+  const lines = [BEGIN, "// fact(key) -> f32 value in the record's unit (NaN for a table or text record); fact_tier(key) -> i32 rank in", "// facts/index.json tier_order (0 defined ... 5 hypothesis), -1 for an unknown key."];
   const byKey = Object.entries(keys.keys).sort((a, b) => a[1] - b[1]);
   for (const [id, key] of byKey) {
     const r = index.facts[id];
-    const label = r ? `${r.label ?? id} [${r.unit}] (${r.tier}${r.superseded_by ? ", superseded by " + r.superseded_by : ""})` : `${id} (no longer in the index)`;
+    const kind = r && typeof r.value !== "number" ? (Array.isArray(r.value) ? "table; fact() is NaN" : typeof r.value === "object" ? "table; fact() is NaN" : "text; fact() is NaN") : null;
+    const label = r ? `${r.label ?? id} [${r.unit}] (${r.tier}${kind ? "; " + kind : ""}${r.superseded_by ? "; superseded by " + r.superseded_by : ""})` : `${id} (no longer in the index)`;
     lines.push(`export const ${constName(id)}: i32 = ${key};`.padEnd(70) + ` // ${label}`);
   }
   lines.push(END);
@@ -54,5 +55,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   }
   writeFileSync(KEYS, keysText);
   writeFileSync(HOST, newHost);
-  console.log(`fact keys: ${Object.keys(keys.keys).length} numeric facts, next key ${keys.next}; wrote runtime/fact_keys.json and the FACT_* block in behaviors/host.ts`);
+  console.log(`fact keys: ${Object.keys(keys.keys).length} facts, next key ${keys.next}; wrote runtime/fact_keys.json and the FACT_* block in behaviors/host.ts`);
 }

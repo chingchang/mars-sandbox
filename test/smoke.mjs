@@ -20,7 +20,7 @@ const SOL = INDEX.facts["mars.time.sol"].value, SOL_KEY = KEYS.keys["mars.time.s
 const code = `
   import { parentPort, workerData } from "node:worker_threads";
   let t=0, drives=0, worst=0, handles=0; const mem=new Float32Array(64);
-  const sens = k => [Math.sin(t)*20, Math.cos(t)*20, t*0.1, 1.5, Math.max(0,1-t/200), 60, t, 15, 0.3, 0.05, (t%20<2)?3:99, 1, 30, -0.4][k] ?? 0;
+  const sens = k => [Math.sin(t)*20, Math.cos(t)*20, t*0.1, 1.5, Math.max(0,1-t/200), 60, t, 15, 0.3, 0.05, (t%20<2)?3:99, 1, 30, -0.4, 200+40*Math.sin(t/60)][k] ?? 0;   // 14: ENV_AIR_TEMP_K, swings around -70 C
   // "drives" counts any actuator: drive, spawn, pose, state_set, signal_emit (a weather station never drives)
   const SOL = ${SOL}, SOL_KEY = ${SOL_KEY};
   const host = { read: sens, drive(){drives++}, set_arm(){}, set_led(){}, log(){}, mem_get:i=>mem[i|0]??0, mem_set:(i,v)=>{mem[i|0]=v},

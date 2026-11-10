@@ -22,7 +22,7 @@ function sensors(w) {
   };
   const [cd,cb]=rel(w.charger.x,w.charger.z);
   const [td,tb]=w.target?rel(w.target.x,w.target.z):[99,0];
-  return k => ({0:w.x,1:w.z,2:w.h,3:w.speed,4:w.bat,5:50,6:w.t,7:cd,8:cb,9:0,10:99,11:0,12:td,13:tb})[k];
+  return k => ({0:w.x,1:w.z,2:w.h,3:w.speed,4:w.bat,5:50,6:w.t,7:cd,8:cb,9:0,10:99,11:0,12:td,13:tb,14:210})[k];
 }
 
 async function load(name, w) {

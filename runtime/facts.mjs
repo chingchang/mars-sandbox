@@ -5,8 +5,9 @@ export function buildFactTable(index, keyMap) {
   const values = new Float32Array(n).fill(NaN), tiers = new Int8Array(n).fill(-1);
   for (const [id, key] of Object.entries(keyMap.keys)) {
     const r = index.facts[id];
-    if (!r || typeof r.value !== "number") continue;
-    values[key] = r.value; tiers[key] = typeof r.tier_rank === "number" ? r.tier_rank : index.tier_order.indexOf(r.tier);
+    if (!r) continue;
+    if (typeof r.value === "number") values[key] = r.value;          // tables and text stay NaN; their tier is still served
+    tiers[key] = typeof r.tier_rank === "number" ? r.tier_rank : index.tier_order.indexOf(r.tier);
   }
   return { values, tiers };
 }
