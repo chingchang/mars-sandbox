@@ -24,6 +24,9 @@ Proof of concept for the "player extends the running game" loop. For the compone
     terrain/*.py             PDS terrain ingestion (MOLA MEGDR, USGS HiRISE DTM) -> web/terrain/*.png + .json sidecars
     facts/derive/            reproducible derivations: recompute.mjs (derived formulas), meda_*.py (MEDA MY36 statistics), mcd_*.py (MCD 6.2 climatology)
     web/png16.mjs            16-bit PNG decoder + heightmap sampler shared by the client and tests
+    runtime/registry.mjs     multi-object sandbox runtime: registry, no-gap swap, per-worker budget + watchdog
+    runtime/worker.mjs       the sandbox worker (browser Web Worker or Node worker_threads), import allow-list
+    test/runtime.test.mjs    three modules tick together; a hang kills only its object; swap leaves others untouched
     test/terrain.test.mjs    every heightmap decodes to what its sidecar claims
     test/facts.test.mjs      validator tests (each violation class has a fixture)
 
@@ -59,7 +62,7 @@ produced by reproducible scripts from PDS products:
 x east, z south, y up, origin at the landing site (y = 0 is the site's own
 elevation; the sidecar carries the height above the datum).
 
-## What the host enforces (see web/app.html, worker-src)
+## What the host enforces (see runtime/registry.mjs and runtime/worker.mjs)
 
 - import allow-list checked with `WebAssembly.Module.imports` before instantiation
 - sensors are a copied snapshot; the module never touches authoritative state
@@ -67,6 +70,10 @@ elevation; the sidecar carries the height above the datum).
 - 2 ms per-tick budget, disabled after 3 consecutive overruns
 - 400 ms watchdog; `worker.terminate()` on a hang (see the "runaway" module)
 - 64 floats of host-owned memory survive a module reload (v2 inherits v1 state)
+- many objects at once: each registry entry (id, owner, version, position, manifest) has its own worker,
+  budget, watchdog and memory; a hung or trapping module takes down only its own object; replacing one
+  object's module leaves the others untouched. The rover is the first entry, not a special case.
+  Until the workshop panel exists: `sandbox.addObject("beacon", 10, -5); sandbox.loadInto("beacon", "patrol")` in the console.
 
 ## Honest caveats
 
