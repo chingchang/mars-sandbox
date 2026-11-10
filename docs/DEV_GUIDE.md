@@ -267,8 +267,7 @@ gantt
     V1 validator + index          :done, 2026-11-06, 1d
     T1 real terrain               :done, 2026-11-07, 1d
     F2 MEDA year + tau            :done, 2026-11-07, 2d
-    section In flight
-    F3 MCD climatology            :active, 2026-11-09, 1d
+    F3 MCD climatology            :done, 2026-11-09, 1d
     section MVP track
     R1 multi-module runtime       :2026-11-10, 2d
     X1 generic host API + manifest:2026-11-11, 1d

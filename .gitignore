@@ -6,3 +6,4 @@ __pycache__/
 data/raw/
 .venv/
 facts/derive/out/*_sols.json
+.supervisor/

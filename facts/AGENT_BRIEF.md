@@ -34,8 +34,8 @@ relay. Stop for review at each PR.
 |---|---|
 | V1 validator + index | merged |
 | T1 terrain (MOLA + HiRISE) | merged |
-| F2 MEDA MY36 + tau from literature | PRs 3 and 4 open, approved |
-| F3 MCD climatology | in progress; finish the current PR, then stop F3 |
+| F2 MEDA MY36 + tau from literature | merged (PRs 3 and 4) |
+| F3 MCD climatology | merged (PR 5); full-database access and the 6.2 release date pending with LMD |
 
 ## Phase C: the MVP (do these next, in order)
 
@@ -134,6 +134,7 @@ These are unchanged from version 1 and still matter; they are simply later.
   acceptance tests from version 1 (freezes with heater off; 2 kW array with no
   storage fails the first night; storm scenario cuts power by the modeled factor).
 - **F4** MY37 rerun of the MEDA pipeline when the archive is complete.
+- **F2b** Upwind-sensor MEDA air-temperature statistic (select the mast sensor facing the wind from `DER_WS`, as the MEDA papers do) to settle how much of the 11-21 K afternoon gap between MCD and MEDA in `facts/derive/out/mcd_vs_meda_my36.md` is rover heating. Until then the engine treats the MCD diurnal swing as a lower bound.
 
 ## Phase E: persistence and multiplayer (later)
 Owner and version fields exist from R1 so this does not require a rewrite.
