@@ -217,6 +217,29 @@ test("tier ordering: a record may not be stronger than its dependencies", () => 
   hasError(dir, /x\.bad_defined: tier "defined" is stronger than its dependency x\.meas \(measured\)/);
 });
 
+test("series uncertainty needs a pointer to an array inside value", () => {
+  const series = { value: { axes: { x: [0, 1] }, series: [[1, 2]], rms: [[0.1, 0.2]] }, tier: "modeled" };
+  const dir = fixture({ "t.json": bundle([
+    good("x.ok", { ...series, uncertainty: { type: "series", pointer: "value.rms" } }),
+    good("x.noptr", { ...series, uncertainty: { type: "series" } }),
+    good("x.badptr", { ...series, uncertainty: { type: "series", pointer: "value.missing" } }),
+    good("x.notarray", { ...series, uncertainty: { type: "series", pointer: "value.axes" } }),
+    good("x.outside", { ...series, uncertainty: { type: "series", pointer: "notes" } }),
+  ]) });
+  const dir2 = fixture({ "t.json": bundle([good("x.ok", { ...series, uncertainty: { type: "series", pointer: "value.rms" } })]) });
+  assert.deepEqual(validateFacts(dir2).errors, []);
+  hasError(dir, /x\.noptr.*must have required property 'pointer'/);
+  // the schema failure above drops the bundle; check the resolver rules in a schema-valid bundle
+  const dir3 = fixture({ "t.json": bundle([
+    good("x.badptr", { ...series, uncertainty: { type: "series", pointer: "value.missing" } }),
+    good("x.notarray", { ...series, uncertainty: { type: "series", pointer: "value.axes" } }),
+    good("x.outside", { ...series, uncertainty: { type: "series", pointer: "notes" } }),
+  ]) });
+  hasError(dir3, /x\.badptr: uncertainty.pointer "value.missing" must name an array/);
+  hasError(dir3, /x\.notarray: uncertainty.pointer "value.axes" must name an array/);
+  hasError(dir3, /x\.outside: uncertainty.pointer "notes" must name an array/);
+});
+
 test("warnings: APPROX records and uncited fact sources", () => {
   const dir = fixture({ "t.json": bundle([
     good("x.approx", { notes: "APPROX. Agent task F2." }),

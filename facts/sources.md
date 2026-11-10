@@ -115,9 +115,20 @@ https://authors.library.caltech.edu/records/a7qs5-xhq84
 Use: **D** (the supplementary DTM/ortho) and **F** for geologic units. Agent task T1: the 1 m DTM is the terrain for the playable region.
 
 ## mcd-lmd
-Millour, E., Forget, F. et al. The Mars Climate Database, version 6.1 (2022-2024). LMD/IPSL, Open University, Oxford, IAA; ESA/CNES supported. Global circulation model outputs: pressure, temperature, winds, dust, water vapour and ice columns, radiative fluxes, several dust scenarios (climatology, cold, warm, storm). Free on request; web interface for quick looks.
-https://www-mars.lmd.jussieu.fr/
-Use: **D** and **F** modeled. This is the right source for anything the rovers did not measure (winds aloft, water vapour, other seasons, other sites). Agent task F3: get MCD access and generate the diurnal/seasonal climatology for Jezero; store as modeled-tier series with MCD version recorded.
+Millour, E., Forget, F. et al. The Mars Climate Database (MCD), version 6.2, web interface. LMD/IPSL with LATMOS, AOPP (Oxford), The Open University, IAA (Granada); supported by ESA and CNES. Global circulation model outputs (pressure, temperature, winds, dust, water, radiative fluxes, day-to-day RMS variability) for dust/solar scenarios: climatology (MY24-31 dust reconstruction) with solar min/ave/max, cold, warm, planet-wide dust storm (opacity 5, Ls 180-360 only), and individual Mars Years 24-37. The web interface serves one point or profile per request in high-resolution mode (32 ppd MOLA, Viking-1 corrected surface pressure); the full database is free on request (form at MCD_pro/mcd_pro.html). Local time in requests is local true solar time at the requested longitude (user manual v6.1, Table 1). The 6.2 release date is not stated on the LMD pages (the v6.1 user manual is dated October 2022; the 6.2 interface serves scenarios through Martian Year 37).
+Licence, quoted from https://www-mars.lmd.jussieu.fr/mars/access.html (read 2026-11-09): "Scientific use of the database is freely allowed provided that the origin of the data is correctly quoted in all publications and that we are kept informed of usage and developments. This database may not be put to any commercial use without specific authorization." The same page says the web interface "is intented for moderate use only". Consequence for Mars Sandbox: the MCD-derived records may be used for development and scientific evaluation with this citation; any public or commercial release of the game that ships these values waits on LMD's authorization, which is being arranged together with full-database access.
+https://www-mars.lmd.jussieu.fr/ (web interface: https://www-mars.lmd.jussieu.fr/mcd_python/ ; documentation: http://www-mars.lmd.jussieu.fr/mars/info_web/index.html ; user manual: http://www-mars.lmd.jussieu.fr/mars/info_web/user_manual_6.1.pdf)
+Use: **D** and **F** modeled. Task F3 records (`jezero.climate.mcd62.*`) are produced by `facts/derive/mcd_fetch.py` + `mcd_records.py`; request URLs and sha256 of every response are in `facts/derive/out/mcd62_jezero.json`. The MCD asks that Forget et al. 1999 and Millour et al. 2018 be cited for general use (`forget-1999-gcm`, `millour-2018-mcd`). Verified 2026-11-09.
+
+## forget-1999-gcm
+Forget, F., Hourdin, F., Fournier, R., Hourdin, C., Talagrand, O., Collins, M., Lewis, S. R., Read, P. L., Huot, J.-P. (1999). Improved general circulation models of the Martian atmosphere from the surface to above 80 km. *Journal of Geophysical Research: Planets* 104(E10), 24155-24175. doi:10.1029/1999JE001025 (bibliographic record from CrossRef, 2026-11-09).
+https://doi.org/10.1029/1999JE001025
+Use: **F** modeled, cited as the MCD asks for general use of the database (the GCM behind it). Not read in full; cited for attribution.
+
+## millour-2018-mcd
+Millour, E., Forget, F., Spiga, A., Vals, M., Zakharov, V., Montabone, L., Lefèvre, F., Montmessin, F., Chaufray, J.-Y., López-Valverde, M. A., González-Galindo, F., Lewis, S. R., Read, P. L., Desjean, M.-C., Cipriani, F. and the MCD development team (2018). The Mars Climate Database (version 5.3). Scientific Workshop "From Mars Express to ExoMars", 27-28 February 2018, ESAC, Madrid, Spain (2-page abstract; ADS bibcode 2018fmee.confE..68M).
+https://www.cosmos.esa.int/documents/1499429/1583871/Millour_E.pdf (via the ADS link gateway; title, authors and venue read from the PDF 2026-11-09)
+Use: **F** modeled, cited as the MCD asks for general use of the database.
 
 ## moxie-hoffman-2022
 Hoffman, J. A. et al. (2022). Mars Oxygen ISRU Experiment (MOXIE): Preparing for human Mars exploration. *Science Advances* 8(35). doi:10.1126/sciadv.abp8636. Seven 2021 runs, ~50 g total, 6-8 g/h; first run 5.4 g at 751 Pa / 201 K.
