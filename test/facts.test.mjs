@@ -220,10 +220,13 @@ test("tier ordering: a record may not be stronger than its dependencies", () => 
 test("warnings: APPROX records and uncited fact sources", () => {
   const dir = fixture({ "t.json": bundle([
     good("x.approx", { notes: "APPROX. Agent task F2." }),
+    good("x.old", { notes: "APPROX, superseded", superseded_by: "x.new" }),
+    good("x.new"),
   ]) });
   const r = validateFacts(dir);
   assert.deepEqual(r.errors, []);
   assert.ok(r.warnings.some(w => /x\.approx: marked APPROX/.test(w)));
+  assert.ok(!r.warnings.some(w => /x\.old/.test(w)), "a superseded record is history, not an open APPROX");
   assert.ok(r.warnings.some(w => /"meda-pds-archive" is not cited by any fact/.test(w)));
 });
 
@@ -259,4 +262,26 @@ test("CLI: exit 1 on a bad record, exit 0 and writes index on good input, --chec
   assert.match(r.stderr, /index\.json is stale/);
   // --check must not have rewritten the index
   assert.deepEqual(JSON.parse(readFileSync(join(ok, "index.json"), "utf8")).ids, ["x.ok"]);
+});
+
+test("every `derive:` link in a record resolves to the stored value", () => {
+  const root = new URL("../", import.meta.url).pathname;
+  const index = JSON.parse(readFileSync(join(root, "facts/index.json"), "utf8"));
+  let checked = 0;
+  for (const r of Object.values(index.facts)) {
+    const m = /derive: (\S+?)#(\S+)/.exec(r.notes ?? "");
+    if (!m) continue;
+    const doc = JSON.parse(readFileSync(join(root, m[1]), "utf8"));
+    let cur = doc;
+    for (const part of m[2].replace(/\]/g, "").split(".")) for (const key of part.split("[")) cur = Array.isArray(cur) ? cur[+key] : cur[key];
+    if (typeof r.value === "number") {
+      const decimals = (String(r.value).split(".")[1] ?? "").length;
+      assert.equal(r.value, +cur.toFixed(decimals), `${r.id}: stored ${r.value} vs derived ${cur}`);
+    } else {
+      assert.ok(cur && typeof cur === "object", `${r.id}: derive path must resolve to an object`);
+      for (const k of Object.keys(r.value)) assert.ok(k in cur, `${r.id}: season ${k} missing in derivation`);
+    }
+    checked++;
+  }
+  assert.ok(checked >= 8, `expected >= 8 linked records, checked ${checked}`);
 });

@@ -248,8 +248,9 @@ export function validateFacts(roots = HERE) {
         errors.push(`${at}: tier "${record.tier}" is stronger than its dependency ${dep} (${d.tier}); composing with weaker evidence cannot raise a tier`);
       }
     }
+    // APPROX marks a placeholder still awaiting replacement; a superseded record is history, not open work
     const text = `${record.notes ?? ""} ${record.uncertainty?.note ?? ""}`;
-    if (/\bapprox\b/i.test(text)) warnings.push(`${at}: marked APPROX (task F2)`);
+    if (!record.superseded_by && /\bapprox\b/i.test(text)) warnings.push(`${at}: marked APPROX (open task)`);
   }
 
   // 4b. dependency cycles (depends_on only)

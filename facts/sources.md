@@ -55,8 +55,9 @@ https://digitalpro.inta.es/handle/123456789/1092
 Use: **F** for dust devil frequency.
 
 ## meda-pds-archive
-PDS Atmospheres Node, Mars 2020 MEDA bundle (pressure, temperature, wind, humidity, RDS, TIRS per sol).
-Use: **D**. Agent task F2: ingest MY36 pressure and temperature series to replace every value marked APPROX in `jezero.json`. (Agent to record the exact bundle URL after locating it on https://pds-atmospheres.nmsu.edu.)
+PDS Atmospheres Node, Mars 2020 MEDA bundle urn:nasa:pds:mars2020_meda, version 6.0 (release 16, 2026-08-11; sols 0-1859). Per-sol CSV products with PDS4 labels: data_derived_env (DER_PS pressure at 1 Hz from barocap 3, DER_RHS, DER_TIRS, DER_WS, DER_ANCILLARY with solar longitude and geometry) and data_calibrated_env (CAL_ATS air temperature at 2 Hz from five sensors, three on the mast at 1.45 m; CAL_PS, CAL_RDS, CAL_TIRS, CAL_WS). Each label carries start/stop solar longitude. No optical-depth product exists at any level (see hypotheses.md 8b).
+https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/ (readme.txt, document/meda_release_notes.txt, document/meda_env_rdr_sis.pdf)
+Use: **D** and **F** for the MY36 pressure and air-temperature statistics in `jezero.json` (records `jezero.*.my36_*`, produced by `facts/derive/meda_fetch.py` + `meda_my36.py`; product LIDs, versions and sha256 in `facts/derive/out/meda_my36.json` and the fetch manifest). Verified 2026-11-07.
 
 ## rad-hassler-2013
 Hassler, D. M. et al. (2013). Mars' surface radiation environment measured with the Mars Science Laboratory's Curiosity rover. *Science* 342(6169). GCR dose equivalent 0.64±0.12 mSv/day (some outlets report 0.67 after re-averaging); absorbed dose 0.210±0.040 mGy/day; cruise 1.84±0.30 mSv/day.
