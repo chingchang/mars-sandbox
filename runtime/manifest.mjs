@@ -33,6 +33,10 @@ export function validateManifest(m) {
     if (!Array.isArray(m.fact_ids) || m.fact_ids.length > MAX_FACT_IDS) errs.push(`fact_ids: array of at most ${MAX_FACT_IDS}`);
     else m.fact_ids.forEach((id, i) => { if (typeof id !== "string" || !ID_RE.test(id)) errs.push(`fact_ids[${i}]: dotted fact id`); });
   }
-  if (m.did_you_know !== undefined && !(typeof m.did_you_know === "string" && m.did_you_know.length <= 300)) errs.push("did_you_know: string up to 300 chars");
+  if (m.did_you_know !== undefined) {
+    const d = m.did_you_know;
+    if (!d || typeof d !== "object" || Array.isArray(d) || !str(d.text, 300) || typeof d.fact_id !== "string" || !ID_RE.test(d.fact_id) || Object.keys(d).some(k => k !== "text" && k !== "fact_id")) errs.push("did_you_know: {text 1..300 chars, fact_id}");
+    else if (Array.isArray(m.fact_ids) && !m.fact_ids.includes(d.fact_id)) errs.push("did_you_know.fact_id must also be listed in fact_ids");
+  }
   return errs;
 }

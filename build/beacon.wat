@@ -4,15 +4,17 @@
  (type $2 (func (param i32 f32 f32 f32 f32 f32 f32) (result i32)))
  (type $3 (func (param i32 f32 f32 f32 f32 f32)))
  (type $4 (func (param f32 f32) (result f32)))
- (type $5 (func (param i32 f32 f32) (result f32)))
- (type $6 (func (param f32)))
- (type $7 (func))
+ (type $5 (func (param i32)))
+ (type $6 (func (param i32 f32 f32) (result f32)))
+ (type $7 (func (param f32)))
+ (type $8 (func))
  (import "host" "state_set" (func $behaviors/host/state_set (param i32 f32)))
  (import "host" "spawn" (func $behaviors/host/spawn (param i32 f32 f32 f32 f32 f32 f32) (result i32)))
  (import "host" "read" (func $behaviors/host/read (param i32) (result f32)))
  (import "host" "pose" (func $behaviors/host/pose (param i32 f32 f32 f32 f32 f32)))
  (import "host" "terrain_height" (func $behaviors/host/terrain_height (param f32 f32) (result f32)))
  (import "host" "signal_read" (func $behaviors/host/signal_read (param i32) (result f32)))
+ (import "host" "remove" (func $behaviors/host/remove (param i32)))
  (import "host" "nearest" (func $behaviors/host/nearest (param i32 f32 f32) (result f32)))
  (import "host" "log" (func $behaviors/host/log (param i32 f32)))
  (global $behaviors/beacon/lamp (mut i32) (i32.const -1))
@@ -68,6 +70,13 @@
    local.get $1
    f32.convert_i32_s
    call $behaviors/host/state_set
+   global.get $behaviors/beacon/lamp
+   i32.const 0
+   i32.ge_s
+   if
+    global.get $behaviors/beacon/lamp
+    call $behaviors/host/remove
+   end
    global.get $behaviors/beacon/lit
    i32.const 1
    i32.eq

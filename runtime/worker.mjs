@@ -4,10 +4,11 @@
 // the page, the scene, the network or the authoritative world state: it sees
 // the sensor snapshot the host sends each tick and returns requests.
 //
-// Protocol (host -> worker):   { type:"load", bytes, sensors, mem }
-//                              { type:"tick", dt, sensors }
+// Protocol (host -> worker):   { type:"load", bytes, sensors, mem, world: { terrain, facts } }
+//                              { type:"tick", dt, sensors, entities, selfIndex, signals: { codes, values } }
 //          (worker -> host):   { type:"loaded", imports, actions, memBytes }
-//                              { type:"actions", actions }   actions.ms = tick() wall time
+//                              { type:"actions", actions }   actions: throttle, steer, arm, led, logs, mem,
+//                                  spawn, pose, remove, state, signals, ms (tick wall time), memBytes
 //                              { type:"error", msg }
 const isNode = typeof self === "undefined";
 let post, onMessage;
@@ -25,19 +26,20 @@ if (isNode) {
 export const ALLOWED = new Set(["read", "drive", "set_arm", "set_led", "log", "mem_get", "mem_set",
   "spawn", "pose", "remove", "state_set", "signal_emit", "signal_read", "terrain_height", "nearest", "nearest_bearing", "fact", "fact_tier"]);
 export const SENSOR_COUNT = 14, MEM_SLOTS = 64, MAX_SHAPES = 32, STATE_SLOTS = 16, MAX_SIGNALS_PER_TICK = 32, MAX_MEMORY_PAGES = 256;
-import { memoryLimits } from "./wasm_limits.mjs";
+import { memoryPolicy } from "./wasm_limits.mjs";
 
 let instance = null, sensors = new Float32Array(SENSOR_COUNT), mem = new Float32Array(MEM_SLOTS);
 let act = null;
 // world data: terrain grid (at load), fact table (at load), entities + signals (per tick)
 let terrain = null, facts = { values: new Float32Array(0), tiers: new Int8Array(0) };
 let entities = new Float32Array(0), selfIndex = -1, signalsIn = new Map();
-const shapes = new Set(); let nextHandle = 0;
+const shapes = new Set(); let freedThisTick = new Set();   // handles: lowest free one is reused, but never one freed in the same tick
 // Every numeric argument is validated here: a non-finite number (NaN, +/-Infinity)
 // is treated as 0 by the clamped actuators and makes mem_set and log ignore the
 // call. Math.max/min pass NaN through, so the check must come first. The registry
 // validates again on the host side; this is defence in depth, not the boundary.
 const fin = v => (Number.isFinite(v) ? v : 0);
+const wrapAngle = a => { a = fin(a); if (Math.abs(a) <= Math.PI) return a; a = a % (2 * Math.PI); return a > Math.PI ? a - 2 * Math.PI : a < -Math.PI ? a + 2 * Math.PI : a; };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, fin(v)));
 function freshActions() { return { throttle: 0, steer: 0, arm: null, led: null, logs: [], mem: [], spawn: [], pose: [], remove: [], state: [], signals: [] }; }
 function terrainHeight(x, z) {
@@ -68,14 +70,17 @@ const host = {
   mem_set: (i, v) => { if (i >= 0 && i < MEM_SLOTS && Number.isFinite(v)) { mem[i | 0] = v; act.mem.push([i | 0, v]); } },
   // ---- generic object API (X1) ----
   spawn: (shape, w, h, d, r, g, b) => {
-    if (shapes.size >= MAX_SHAPES || nextHandle >= MAX_SHAPES) return -1;
-    const handle = nextHandle++; shapes.add(handle);
+    if (shapes.size >= MAX_SHAPES) return -1;
+    let handle = 0; while (handle < MAX_SHAPES && (shapes.has(handle) || freedThisTick.has(handle))) handle++;
+    if (handle >= MAX_SHAPES) return -1;                       // every free handle was freed this tick: try next tick
+    shapes.add(handle);
     const size = v => clamp(fin(v) || 0.1, 0.01, 50);
     act.spawn.push([handle, clamp(shape | 0, 0, 4), size(w), size(h), size(d), clamp(r, 0, 1), clamp(g, 0, 1), clamp(b, 0, 1)]);
     return handle;
   },
-  pose: (handle, x, y, z, yaw, pitch) => { if (shapes.has(handle | 0)) act.pose.push([handle | 0, fin(x), fin(y), fin(z), fin(yaw), fin(pitch)]); },
-  remove: handle => { if (shapes.delete(handle | 0)) act.remove.push(handle | 0); },
+  // offsets clamped to +/-50 m (the size cap) so a module cannot draw on top of a distant object; angles wrapped to +/-pi
+  pose: (handle, x, y, z, yaw, pitch) => { if (shapes.has(handle | 0)) act.pose.push([handle | 0, clamp(x, -50, 50), clamp(y, -50, 50), clamp(z, -50, 50), wrapAngle(yaw), wrapAngle(pitch)]); },
+  remove: handle => { if (shapes.delete(handle | 0)) { freedThisTick.add(handle | 0); act.remove.push(handle | 0); } },
   state_set: (slot, v) => { if (slot >= 0 && slot < STATE_SLOTS && Number.isFinite(v)) act.state.push([slot | 0, v]); },
   signal_emit: (code, v) => { if (code >= 0 && code <= 65535 && Number.isFinite(v) && act.signals.length < MAX_SIGNALS_PER_TICK) act.signals.push([code | 0, v]); },
   signal_read: code => signalsIn.get(code | 0) ?? 0,
@@ -89,11 +94,9 @@ const host = {
 onMessage(async m => {
   if (m.type === "load") {
     try {
-      // memory ceiling: a module must declare a maximum, and it must fit under MAX_MEMORY_PAGES
-      const lim = memoryLimits(m.bytes);
-      if (lim && lim.max === null) throw new Error("module declares no maximum memory (compile with --maximumMemory)");
-      if (lim && lim.max > MAX_MEMORY_PAGES) throw new Error(`module declares maximum memory ${lim.max} pages, ceiling is ${MAX_MEMORY_PAGES}`);
-      if (lim && lim.imported) throw new Error("imported memory is not allowed");
+      // memory ceiling: exactly one linear memory (or none), declared maximum, under MAX_MEMORY_PAGES, no memory64
+      const why = memoryPolicy(m.bytes, MAX_MEMORY_PAGES);
+      if (why) throw new Error(why);
       const mod = await WebAssembly.compile(m.bytes);
       const imports = WebAssembly.Module.imports(mod);
       for (const imp of imports) {
@@ -104,7 +107,7 @@ onMessage(async m => {
       mem.set(m.mem);
       sensors.set(m.sensors);
       if (m.world) { terrain = m.world.terrain ?? null; if (m.world.facts) facts = m.world.facts; }
-      shapes.clear(); nextHandle = 0;
+      shapes.clear(); freedThisTick = new Set();
       instance = (await WebAssembly.instantiate(mod, { host })).exports;
       act = freshActions();
       instance.init();
@@ -115,7 +118,7 @@ onMessage(async m => {
     if (m.entities) entities = m.entities;
     if (typeof m.selfIndex === "number") selfIndex = m.selfIndex;
     signalsIn = new Map(); if (m.signals) for (let i = 0; i < m.signals.codes.length; i++) signalsIn.set(m.signals.codes[i], m.signals.values[i]);
-    act = freshActions();
+    act = freshActions(); freedThisTick = new Set();
     const t0 = performance.now();
     try { instance.tick(m.dt); }
     catch (err) { post({ type: "error", msg: "trap in tick(): " + String(err && err.message || err) }); return; }

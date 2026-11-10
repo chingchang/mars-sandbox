@@ -7,7 +7,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { Registry, nodeSpawner, SENSOR_COUNT, MAX_SHAPES, MAX_MEMORY_PAGES } from "../runtime/registry.mjs";
 import { buildFactTable } from "../runtime/facts.mjs";
 import { validateManifest } from "../runtime/manifest.mjs";
-import { memoryLimits } from "../runtime/wasm_limits.mjs";
+import { memoryLimits, memoryPolicy } from "../runtime/wasm_limits.mjs";
 
 const read = p => readFileSync(new URL(p, import.meta.url));
 const wasm = name => read(`../build/${name}.wasm`);
@@ -127,11 +127,76 @@ test("memory ceiling: memhog is capped at 256 pages and keeps running; a module 
   // no declared maximum: hand-assembled module with a memory section (min 1, no max) and init/tick exports
   const NOMAX = Uint8Array.from([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 1, 4, 1, 0x60, 0, 0, 3, 3, 2, 0, 0, 5, 3, 1, 0, 1,
     7, 15, 2, 4, 0x69, 0x6e, 0x69, 0x74, 0, 0, 4, 0x74, 0x69, 0x63, 0x6b, 0, 1, 10, 7, 2, 2, 0, 0x0b, 2, 0, 0x0b]);
-  assert.deepEqual(memoryLimits(NOMAX), { min: 1, max: null, imported: false });
-  assert.equal(memoryLimits(wasm("patrol")).max, 256);
-  assert.equal(memoryLimits(wasm("memhog")).max, 256);
+  assert.deepEqual(memoryLimits(NOMAX), [{ min: 1, max: null, imported: false, flag: 0 }]);
+  assert.equal(memoryLimits(wasm("patrol"))[0].max, 256);
+  assert.equal(memoryLimits(wasm("memhog"))[0].max, 256);
   reg.add({ id: "n" });
   await assert.rejects(reg.load("n", { name: "nomax", bytes: NOMAX }), /declares no maximum memory/);
+});
+
+// the same skeleton with other memory sections: a bounded first memory plus a second one
+const withMemorySection = (...mem) => Uint8Array.from([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 1, 4, 1, 0x60, 0, 0, 3, 3, 2, 0, 0, 5, mem.length, ...mem,
+  7, 15, 2, 4, 0x69, 0x6e, 0x69, 0x74, 0, 0, 4, 0x74, 0x69, 0x63, 0x6b, 0, 1, 10, 7, 2, 2, 0, 0x0b, 2, 0, 0x0b]);
+const TWO_MEM_UNBOUNDED = withMemorySection(2, 1, 1, 1, 0, 1);                 // (memory 1 1) (memory 1)
+const TWO_MEM_HUGE = withMemorySection(2, 1, 1, 1, 1, 1, 0x80, 0x80, 0x04);    // (memory 1 1) (memory 1 65536)
+const MEMORY64 = withMemorySection(1, 4, 1);                                   // (memory i64 1)
+
+test("memory policy covers every memory: a second memory, bounded or not, and memory64 are rejected", async () => {
+  assert.equal(memoryLimits(TWO_MEM_UNBOUNDED).length, 2);
+  assert.deepEqual(memoryLimits(TWO_MEM_HUGE)[1], { min: 1, max: 65536, imported: false, flag: 1 });
+  assert.match(memoryPolicy(TWO_MEM_UNBOUNDED, MAX_MEMORY_PAGES), /declares 2 memories/);
+  assert.match(memoryPolicy(TWO_MEM_HUGE, MAX_MEMORY_PAGES), /declares 2 memories/);
+  assert.throws(() => memoryLimits(MEMORY64), /memory64 is not allowed/);
+  assert.match(memoryPolicy(MEMORY64, MAX_MEMORY_PAGES), /memory64/);
+  assert.equal(memoryPolicy(wasm("patrol"), MAX_MEMORY_PAGES), null);
+  assert.equal(memoryPolicy(EVIL_NO_MEMORY, MAX_MEMORY_PAGES), null, "a module with no memory has nothing to grow");
+  const { reg } = makeWorld();
+  for (const [name, bytes, re] of [["two_unbounded", TWO_MEM_UNBOUNDED, /declares 2 memories/], ["two_huge", TWO_MEM_HUGE, /declares 2 memories/], ["mem64", MEMORY64, /memory64/]]) {
+    reg.add({ id: name });
+    await assert.rejects(reg.load(name, { name, bytes }), re);
+    assert.equal(reg.enabled(name), false);
+  }
+});
+const EVIL_NO_MEMORY = Uint8Array.from([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 1, 4, 1, 0x60, 0, 0, 3, 3, 2, 0, 0,
+  7, 15, 2, 4, 0x69, 0x6e, 0x69, 0x74, 0, 0, 4, 0x74, 0x69, 0x63, 0x6b, 0, 1, 10, 7, 2, 2, 0, 0x0b, 2, 0, 0x0b]);
+
+test("handles are reused: 100 spawn/remove cycles never fail and hold at most one live shape", async () => {
+  const { reg, events, run } = makeWorld();
+  reg.add({ id: "c" });
+  await reg.load("c", { name: "churn", bytes: wasm("churn"), logNames: { 60: "handle" } });
+  await run(100, 0.05, 5);
+  const handles = events.filter(e => e.type === "actions" && e.id === "c").flatMap(e => e.actions.logs.filter(([c]) => c === 60).map(([, v]) => v));
+  assert.ok(handles.length >= 100, `${handles.length} spawns`);
+  assert.ok(handles.every(h => h >= 0 && h < 2), `handles alternate between 0 and 1, never -1: ${[...new Set(handles)].join(",")}`);
+  assert.ok(handles.includes(0) && handles.includes(1), "the freed handle is reused on the following tick");
+  assert.equal(reg.get("c").shapes.size, 1);
+  assert.ok(events.filter(e => e.type === "remove" && e.id === "c").length >= 99);
+  reg.unload("c");
+});
+
+test("beacon: ten toggles leave exactly one lamp whose colour matches the lit state", async () => {
+  const { reg, events, run } = makeWorld();
+  const rover = reg.add({ id: "rover", kind: "rover", position: { x: 0, z: 0 } });
+  reg.add({ id: "beacon", position: { x: 30, z: 0 } });
+  await reg.load("beacon", { name: "beacon", bytes: wasm("beacon") });
+  for (let i = 0; i < 10; i++) {
+    rover.position.x = i % 2 === 0 ? 15 : 0;                      // 15 m (in range), 30 m (out of range), ...
+    await run(6, 0.05, 30);                                        // enough real time for every tick to complete
+    const b = reg.get("beacon");
+    assert.equal(b.shapes.size, 1, `toggle ${i}: one lamp`);
+    const lamp = [...b.shapes.values()][0];
+    const lit = i % 2 === 0;
+    assert.equal(b.state[1], lit ? 1 : 0);
+    assert.equal(lamp.r === 1, lit, `toggle ${i}: lamp colour matches lit=${lit}`);
+  }
+  assert.ok(events.filter(e => e.type === "remove" && e.id === "beacon").length >= 10);
+  reg.unload("beacon");
+});
+
+test("did_you_know must name a fact id that is also in fact_ids", () => {
+  assert.deepEqual(validateManifest(STATION_MANIFEST), []);
+  assert.ok(validateManifest({ ...STATION_MANIFEST, did_you_know: "a free string" }).length > 0);
+  assert.ok(validateManifest({ ...STATION_MANIFEST, did_you_know: { text: "x", fact_id: "mars.time.sol" }, fact_ids: ["jezero.temperature.my36_air_annual_mean"] }).some(e => /also be listed/.test(e)));
 });
 
 test("manifest: the sample validates with ajv and the runtime check; bad manifests fail both consistently", () => {
@@ -147,6 +212,8 @@ test("manifest: the sample validates with ajv and the runtime check; bad manifes
     { ...STATION_MANIFEST, version: 0 },
     { ...STATION_MANIFEST, signals: { emits: [{ code: 70000, label: "x" }] } },
     { ...STATION_MANIFEST, shapes: 33 },
+    { ...STATION_MANIFEST, did_you_know: "a free string" },
+    { ...STATION_MANIFEST, did_you_know: { text: "x" } },
   ];
   for (const m of bad) { assert.equal(validate(m), false, JSON.stringify(m).slice(0, 80)); assert.ok(validateManifest(m).length > 0, JSON.stringify(m).slice(0, 80)); }
 });

@@ -2,7 +2,7 @@
 // hand-written shape of acceptance prompt A1.2). One sphere that lights up when
 // any rover is within 20 m; reports its own terrain height and the last hour
 // pulse it heard from a weather station (signal 100). Drives nothing.
-import { read, spawn, pose, state_set, signal_read, nearest, terrain_height, log,
+import { read, spawn, pose, remove, state_set, signal_read, nearest, terrain_height, log,
          POS_X, POS_Z, SHAPE_SPHERE, KIND_ROVER } from "./host";
 
 const SLOT_ROVER_DIST: i32 = 0;
@@ -29,7 +29,10 @@ export function tick(dt: f32): void {
   if (now != lit) {
     lit = now;
     state_set(SLOT_LIT, <f32>now);
-    // re-spawn the lamp in the new colour: red when lit, grey when not
+    // recolour by removing the old lamp and spawning a new one (red when lit, grey when not).
+    // The freed handle is not reused in the same tick, so the new lamp gets another handle; the old
+    // one is gone either way. There is exactly one lamp at any time.
+    if (lamp >= 0) remove(lamp);
     if (lit == 1) { lamp = spawn(SHAPE_SPHERE, 0.5, 0.5, 0.5, 1.0, 0.1, 0.1); } else { lamp = spawn(SHAPE_SPHERE, 0.4, 0.4, 0.4, 0.3, 0.3, 0.3); }
     pose(lamp, 0.0, 1.5, 0.0, 0.0, 0.0);
     log(50, <f32>now);

@@ -6,7 +6,7 @@ The complete list of functions a module may call, and the sensor keys it may rea
 
 **Requests, not commands.** Nothing a module calls changes the world directly. Each call records a request; after `tick()` returns, the host validates and applies the batch. The host may clamp, drop or ignore any request.
 
-**Budget and watchdog.** `tick(dt)` must return within 2 ms on average; three consecutive ticks over budget disable the module. A tick that does not return within 400 ms is terminated, together with its worker. `init()` must complete within 3 s. A module's linear memory must declare a maximum of at most 256 pages (16 MiB); a module with no declared maximum, or a larger one, is rejected at load. `memory.grow` beyond the maximum fails and returns -1; the module keeps running.
+**Budget and watchdog.** `tick(dt)` must return within 2 ms on average; three consecutive ticks over budget disable the module. A tick that does not return within 400 ms is terminated, together with its worker. `init()` must complete within 3 s. A module may have exactly one linear memory (or none), not imported, 32-bit, declaring a maximum of at most 256 pages (16 MiB); a module with a second memory, an imported memory, a memory64 memory, no declared maximum, or a larger one is rejected at load. `memory.grow` beyond the maximum fails and returns -1; the module keeps running.
 
 ## Module shape
 
@@ -32,9 +32,9 @@ Returns the current value of one sensor from a snapshot taken by the host before
 
 `spawn(shape, w, h, d, r, g, b) -> i32`: create a shape owned by this object and return its handle, 0..31, or −1 if the object already has 32 shapes. `shape` is one of `SHAPE_BOX` (0), `SHAPE_CYLINDER` (1), `SHAPE_SPHERE` (2), `SHAPE_CONE` (3), `SHAPE_PANEL` (4); any other value becomes the nearest valid one. `w`, `h`, `d` are metres, clamped to 0.01..50 (a cylinder and a cone use `w` as diameter and `h` as height; a sphere uses `w` as diameter; a panel is a thin box). `r`, `g`, `b` are colour 0..1. A new shape sits at the object's origin until posed. Handles are per object: a module cannot see, move or remove another object's shapes, because it never holds their handles and the host only honours handles it saw this object spawn.
 
-`pose(handle, x, y, z, yaw, pitch)`: place a shape relative to the object's own position and heading, metres and radians (x right, y up, z forward; yaw about y, pitch about x). An unknown handle is ignored.
+`pose(handle, x, y, z, yaw, pitch)`: place a shape relative to the object's own position and heading, metres and radians (x right, y up, z forward; yaw about y, pitch about x). Offsets are clamped to ±50 m and angles wrapped to ±π, so a module cannot draw its shapes on top of a distant object. An unknown handle is ignored.
 
-`remove(handle)`: delete a shape and free its handle for reuse by this object. An unknown handle is ignored. When a module is replaced or unloaded, all its shapes are removed.
+`remove(handle)`: delete a shape and free its handle. `spawn` always returns the lowest free handle, so a module may spawn and remove indefinitely as long as it holds at most 32 shapes at once; the one rule is that a handle freed in a tick is not handed out again until the next tick, so remove-then-spawn in the same tick yields a different handle (and requests are applied in the order spawn, pose, remove within a tick). An unknown handle is ignored. When a module is replaced or unloaded, all its shapes are removed. To recolour a shape, remove it and spawn a new one.
 
 ## State
 
@@ -44,7 +44,7 @@ Returns the current value of one sensor from a snapshot taken by the host before
 
 `signal_emit(code, value)`: publish a world-scoped number under an integer code 0..65535. Every module, including this one, can read it on the next tick with `signal_read`; after that tick it is gone unless re-emitted. At most 32 emits per tick per module; a later emit of the same code in the same tick wins. The manifest declares the codes a module emits and the codes it listens to, so the inspector and other players can wire things together.
 
-`signal_read(code) -> f32`: the value emitted under `code` during the previous tick by any module, or 0 if none. There is no way to tell "0 was emitted" from "nothing was emitted"; emit 1 for a boolean flag.
+`signal_read(code) -> f32`: the value emitted under `code` during the previous tick by any module, or 0 if none. There is no way to tell "0 was emitted" from "nothing was emitted"; emit 1 for a boolean flag. A listener whose previous tick was still running when the signal expired misses it, so a value that must be seen should be re-emitted every tick while it holds, not pulsed once.
 
 ## World queries
 
@@ -64,7 +64,7 @@ Coordinates are the world frame: x east, z south, metres, origin at the landing 
 
 ## Manifest
 
-Every module travels with a manifest (`runtime/manifest.schema.json`): `name`, `description`, `version` (integer, from 1), `author`, and optionally `state` (slot, label, unit), `signals` (`emits` / `listens`, each code with a label), `shapes` (how many it spawns at most), `fact_ids` (the facts it depends on) and `did_you_know` (one fact the design used, in the player's words, tied to an id in `fact_ids`). The runtime rejects a load whose manifest fails the schema. The inspector renders from it.
+Every module travels with a manifest (`runtime/manifest.schema.json`): `name`, `description`, `version` (integer, from 1), `author`, and optionally `state` (slot, label, unit), `signals` (`emits` / `listens`, each code with a label), `shapes` (how many it spawns at most), `fact_ids` (the facts it depends on) and `did_you_know` (`{ text, fact_id }`: one fact the design used, in the player's words; `fact_id` must also appear in `fact_ids`, so the inspector can show the citation). The runtime rejects a load whose manifest fails the schema. The inspector renders from it.
 
 ## What is not here
 
