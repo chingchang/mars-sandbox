@@ -27,4 +27,5 @@ writeFileSync("dist/index.html", html);
 // terrain heightmaps and the 16-bit PNG decoder are fetched at runtime, not embedded
 cpSync("web/terrain", "dist/terrain", { recursive: true });
 cpSync("web/png16.mjs", "dist/png16.mjs");
+cpSync("runtime", "dist/runtime", { recursive: true });
 console.log(`dist/index.html written (${(html.length/1024).toFixed(0)} KB)`);

@@ -90,55 +90,7 @@
 <script id="behaviors" type="application/json">/*__BEHAVIORS__*/</script>
 <script id="hostapi" type="text/plain">/*__HOST__*/</script>
 
-<!-- ===================== the sandbox worker ===================== -->
-<script id="worker-src" type="text/plain">
-// Runs inside a Web Worker. Owns exactly one Wasm behavior instance.
-// Has no access to the DOM, the scene, the network*, or the authoritative state:
-// it only sees the sensor snapshot the host sends each tick and returns requests.
-// (*the page's CSP also blocks fetch from here)
-const ALLOWED = new Set(["read","drive","set_arm","set_led","log","mem_get","mem_set"]);
-let instance = null, sensors = new Float32Array(14), mem = new Float32Array(64);
-let act = null;
-function freshActions(){ return { throttle:0, steer:0, arm:null, led:null, logs:[], mem:[] }; }
-const host = {
-  read: k => (k>=0 && k<14) ? sensors[k|0] : 0,
-  drive: (t,s) => { act.throttle = Math.max(-1,Math.min(1,t)); act.steer = Math.max(-1,Math.min(1,s)); },
-  set_arm: a => { act.arm = Math.max(0,Math.min(1,a)); },
-  set_led: (r,g,b) => { act.led = [r,g,b].map(v=>Math.max(0,Math.min(1,v))); },
-  log: (c,v) => { if (act.logs.length < 8) act.logs.push([c|0, v]); },
-  mem_get: i => (i>=0 && i<64) ? mem[i|0] : 0,
-  mem_set: (i,v) => { if (i>=0 && i<64) { mem[i|0]=v; act.mem.push([i|0, v]); } },
-};
-self.onmessage = async e => {
-  const m = e.data;
-  if (m.type === "load") {
-    try {
-      const mod = await WebAssembly.compile(m.bytes);
-      const imports = WebAssembly.Module.imports(mod);
-      for (const imp of imports) {
-        if (imp.module !== "host" || !ALLOWED.has(imp.name))
-          throw new Error("illegal import " + imp.module + "." + imp.name);
-      }
-      const exps = WebAssembly.Module.exports(mod).map(x=>x.name);
-      if (!exps.includes("tick") || !exps.includes("init")) throw new Error("module must export init() and tick(dt)");
-      mem.set(m.mem);
-      sensors.set(m.sensors);
-      instance = (await WebAssembly.instantiate(mod, { host })).exports;
-      act = freshActions();
-      instance.init();
-      self.postMessage({ type:"loaded", imports: imports.map(i=>i.module+"."+i.name), actions: act, memBytes: instance.memory ? instance.memory.buffer.byteLength : 0 });
-    } catch (err) { self.postMessage({ type:"error", msg: String(err.message || err) }); }
-  } else if (m.type === "tick" && instance) {
-    sensors.set(m.sensors);
-    act = freshActions();
-    const t0 = performance.now();
-    try { instance.tick(m.dt); }
-    catch (err) { self.postMessage({ type:"error", msg: "trap in tick(): " + String(err.message || err) }); return; }
-    act.ms = performance.now() - t0;
-    self.postMessage({ type:"actions", actions: act });
-  }
-};
-</script>
+<!-- the sandbox worker is runtime/worker.mjs; the multi-object registry is runtime/registry.mjs -->
 
 <script type="module">
 import * as THREE from "three";
@@ -157,6 +109,7 @@ const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 //   ?terrain=mola        MOLA MEGDR 128 ppd, 460 m/px, 40 x 40 km (crater context)
 //   ?terrain=procedural  the original toy heightfield, kept for tests
 import { decodePng16, makeSampler } from "./png16.mjs";
+import { Registry, browserSpawner, BUDGET_MS, TICK_HZ } from "./runtime/registry.mjs";
 const TERRAINS = {
   hirise: { file: "terrain/jezero_hirise_5km", seg: 500 },
   mola:   { file: "terrain/jezero_mola_40km",  seg: 86 },
@@ -298,8 +251,17 @@ function sensorSnapshot() {
 function sunElev() { return Math.sin(W.t/DAY*2*Math.PI + 0.9); }
 function solarW() { return Math.max(0, sunElev())*120 * (1-0.3*Math.abs(Math.sin(W.h))); }
 
+function stepObject(o, dt) {              // generic object kinematics: same rules as the rover, no battery
+  const p = o.position; if (!registry.enabled(o.id)) { p.throttle = (p.throttle ?? 0) * 0.9; p.steer = 0; }
+  p.speed = (p.speed ?? 0) + ((p.throttle ?? 0) * MAX_SPEED - (p.speed ?? 0)) * Math.min(1, dt*3);
+  p.yaw += (p.steer ?? 0) * TURN * dt;
+  const nx = p.x + Math.sin(p.yaw) * p.speed * dt, nz = p.z + Math.cos(p.yaw) * p.speed * dt;
+  if (Math.abs(nx) < 105 && Math.abs(nz) < 105) { p.x = nx; p.z = nz; } else p.speed = 0;
+}
+
 function physics(dt) {
-  if (!module.enabled) { W.throttle *= 0.9; W.steer = 0; }
+  if (!roverEnabled()) { W.throttle *= 0.9; W.steer = 0; }
+  for (const o of registry.list()) if (o.id !== ROVER_ID) stepObject(o, dt);
   const want = W.throttle*MAX_SPEED;
   W.speed += (want - W.speed) * Math.min(1, dt*3);
   if (W.bat <= 0) W.speed *= 0.8;
@@ -317,85 +279,76 @@ function physics(dt) {
   W.t += dt;
 }
 
-// ------------------------------------------------------------------ module host (worker lifecycle, budgets, watchdog)
-const workerSrc = document.getElementById("worker-src").textContent;
-const workerURL = URL.createObjectURL(new Blob([workerSrc], { type:"text/javascript" }));
-const BUDGET_MS = 2.0, WATCHDOG_MS = 400, TICK_HZ = 20;
-const module = { worker:null, name:null, enabled:false, state:"none", inflight:false, lastSent:0, over:0, avgMs:0, imports:[] };
-let pendingSwap = null;
+// ------------------------------------------------------------------ module host: the multi-object registry (runtime/registry.mjs)
+// Every live object (the rover first) is a registry entry with an owner, a version, a position,
+// 64 floats of host-owned memory and zero or one module worker. The registry enforces the
+// allow-list, the per-worker budget and the watchdog; the page applies each object's requests.
+const registry = new Registry({ spawnWorker: browserSpawner(new URL("./runtime/worker.mjs", location.href)), onEvent: onRegistryEvent });
+const ROVER_ID = "rover";
+const rover_obj = registry.add({ id: ROVER_ID, owner: "player", version: 1, kind: "rover", position: { x: 0, y: 0, z: 0, yaw: 0 } });
+rover_obj.mem = W.mem;                                       // the rover's host memory is the world's existing slot array
+const roverModule = () => registry.get(ROVER_ID).module;
+const roverEnabled = () => registry.enabled(ROVER_ID);
+let currentName = null;
 
 const el = id => document.getElementById(id);
-function setState(s, label) { module.state = s; el("state").textContent = label || s; el("state").className = "pill " + s; }
+function setState(s, label) { el("state").textContent = label || s; el("state").className = "pill " + s; }
 function logLine(cls, text) {
   const L = el("log"); const d = document.createElement("div"); d.className = cls;
   d.textContent = `[${W.t.toFixed(1).padStart(6)}s] ${text}`; L.appendChild(d);
   while (L.children.length > 60) L.removeChild(L.firstChild); L.scrollTop = L.scrollHeight;
 }
 
-function loadModule(name, bytes, logNames) {
-  // Build the new instance *beside* the old one; swap only once init() succeeded.
-  const w = new Worker(workerURL);
-  setState("loading", "verifying + instantiating");
-  logLine("host", `loading "${name}" (${bytes.byteLength} bytes) in a fresh worker`);
-  const killer = setTimeout(() => { w.terminate(); setState(module.enabled ? "running" : "dead", module.enabled ? "running" : "load failed"); logLine("err", `load of "${name}" timed out; old module kept`); }, 3000);
-  w.onmessage = e => {
-    const m = e.data;
-    if (m.type === "loaded") {
-      clearTimeout(killer);
-      if (module.worker) { module.worker.terminate(); logLine("host", `old module "${module.name}" terminated`); }
-      module.worker = w; module.name = name; module.enabled = true; module.inflight = false; module.over = 0; module.avgMs = 0; module.imports = m.imports; module.logNames = logNames || {};
-      w.onmessage = onActions;
-      applyActions(m.actions);
-      setState("running", "running");
-      el("modname").textContent = name;
-      el("s-imports").textContent = m.imports.length + " ok";
-      logLine("host", `imports verified: ${m.imports.join(", ")}`);
-      logLine("host", `"${name}" is live. The world never paused.`);
-    } else if (m.type === "error") {
-      clearTimeout(killer); w.terminate();
-      logLine("err", `rejected "${name}": ${m.msg}`);
-      setState(module.enabled ? "running" : "dead", module.enabled ? "running" : "rejected");
-    }
-  };
-  w.postMessage({ type:"load", bytes, sensors: sensorSnapshot(), mem: W.mem }, [bytes.buffer ? bytes.buffer : bytes]);
+// generic objects: anything that is not the rover gets a marker and the same simple kinematics
+// (X1 gives them shapes and the generic host calls; W2 gives them a panel)
+const markers = new Map();
+function markerFor(obj) {
+  if (markers.has(obj.id)) return markers.get(obj.id);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), new THREE.MeshStandardMaterial({ color: 0x6fe3a0, emissive: 0x1f6f45, emissiveIntensity: 0.6 }));
+  m.castShadow = true; scene.add(m); markers.set(obj.id, m); return m;
+}
+function sensorsForObject(obj) {
+  if (obj.id === ROVER_ID) return sensorsCache;
+  const p = obj.position, [cd, cb] = (() => { const dx = CHARGER.x - p.x, dz = CHARGER.z - p.z; let b = Math.atan2(dx, dz) - p.yaw; while (b > Math.PI) b -= 2*Math.PI; while (b < -Math.PI) b += 2*Math.PI; return [Math.hypot(dx, dz), b]; })();
+  return Float32Array.from([p.x, p.z, p.yaw, p.speed ?? 0, 1, solarW(), W.t, cd, cb, 0, 99, 0, 99, 0]);
+}
+function applyObjectActions(obj, a) {
+  const p = obj.position; p.throttle = a.throttle; p.steer = a.steer;
 }
 
-function unloadModule(reason) {
-  if (module.worker) { module.worker.terminate(); module.worker = null; }
-  module.enabled = false; module.inflight = false;
-  setState("dead", reason || "unloaded");
-  logLine("host", `module "${module.name}" ${reason || "unloaded"}; rover coasting`);
-  module.name = null; el("s-imports").textContent = "—";
+function onRegistryEvent(ev) {
+  if (ev.type === "log") { logLine(ev.level === "err" ? "err" : ev.level === "mod" ? "mod" : "host", ev.text); return; }
+  if (ev.type === "state" && ev.id === ROVER_ID) { setState(ev.state, ev.label); if (ev.state === "dead") { el("s-imports").textContent = "—"; currentName = null; } return; }
+  if (ev.type === "loaded" && ev.id === ROVER_ID) { el("modname").textContent = currentName; el("s-imports").textContent = ev.imports.length + " ok"; return; }
+  if (ev.type === "actions") {
+    if (ev.id === ROVER_ID) applyActions(ev.actions);
+    else applyObjectActions(ev.object, ev.actions);
+    if (ev.actions.ms !== undefined && ev.id === ROVER_ID) el("tick").textContent = ev.actions.ms < 0.0001 ? "<100 µs" : (ev.actions.ms*1000).toFixed(0) + " µs";
+  }
 }
+
+function loadModule(name, bytes, logNames, id = ROVER_ID) {
+  if (id === ROVER_ID) currentName = name;
+  registry.load(id, { name, bytes, logNames, sensors: sensorsForObject(registry.get(id)) }).catch(() => {});
+}
+function unloadModule(reason, id = ROVER_ID) { if (registry.enabled(id)) registry.unload(id, reason); if (id === ROVER_ID) logLine("host", "rover coasting"); }
 
 function applyActions(a) {
   W.throttle = a.throttle; W.steer = a.steer;
   if (a.arm !== null && a.arm !== undefined) W.armTarget = a.arm;
   if (a.led) led.material.emissive.setRGB(a.led[0], a.led[1], a.led[2]);
-  for (const [i,v] of a.mem) W.mem[i] = v;
-  for (const [c,v] of a.logs) logLine("mod", `${module.name}: ${module.logNames[c] || ("code "+c)} ${Number.isFinite(v) ? v.toFixed(2) : v}`);
 }
 
-function onActions(e) {
-  const m = e.data;
-  module.inflight = false;
-  if (m.type === "error") { logLine("err", m.msg); unloadModule("trapped"); return; }
-  applyActions(m.actions);
-  module.avgMs = module.avgMs*0.9 + m.actions.ms*0.1;
-  el("tick").textContent = m.actions.ms < 0.0001 ? "<100 µs" : (m.actions.ms*1000).toFixed(0) + " µs";
-  if (m.actions.ms > BUDGET_MS) { if (++module.over >= 3) { logLine("err", `tick() over ${BUDGET_MS} ms budget 3× in a row`); unloadModule("disabled: over budget"); } }
-  else module.over = 0;
-}
+function tickModule(now) { registry.tick(now, sensorsForObject); }
 
-function tickModule(now) {
-  if (!module.enabled) return;
-  if (module.inflight) {
-    if (now - module.lastSent > WATCHDOG_MS) { logLine("err", `watchdog: tick() did not return in ${WATCHDOG_MS} ms`); unloadModule("killed by watchdog"); }
-    return;
-  }
-  module.inflight = true; module.lastSent = now;
-  module.worker.postMessage({ type:"tick", dt: 1/TICK_HZ, sensors: sensorsCache });
-}
+// developer hooks for the multi-object runtime until the workshop panel (W2) exists:
+//   sandbox.addObject("beacon", 10, -5); sandbox.loadInto("beacon", "patrol")
+window.sandbox = {
+  registry,
+  addObject(id, x = 0, z = 0, owner = "player") { const o = registry.add({ id, owner, position: { x, y: 0, z, yaw: 0 } }); markerFor(o); return o; },
+  loadInto(id, name) { const b = BEHAVIORS.find(x => x.name === name); if (!b) throw new Error(`no sample "${name}"`); loadModule(b.name, b64(b.wasm), b.logNames, id); },
+  unload(id) { unloadModule("unloaded", id); },
+};
 
 // ------------------------------------------------------------------ UI
 let selected = BEHAVIORS[0].name;
@@ -412,7 +365,7 @@ function renderChips() {
 }
 renderChips();
 el("load").onclick = () => { const b = BEHAVIORS.find(x=>x.name===selected); loadModule(b.name, b64(b.wasm), b.logNames); };
-el("unload").onclick = () => module.enabled && unloadModule("unloaded by player");
+el("unload").onclick = () => roverEnabled() && unloadModule("unloaded by player");
 el("file").onchange = async ev => {
   const f = ev.target.files[0]; if (!f) return;
   const bytes = new Uint8Array(await f.arrayBuffer());
@@ -456,14 +409,16 @@ function frame(now) {
   tickAcc += dt;
   if (tickAcc >= 1/TICK_HZ) { tickAcc = 0; sensorsCache = sensorSnapshot(); tickModule(now); }
 
-  // rover pose
+  // rover pose (and mirror it into the registry entry so every object's position is readable there)
   const y = h(W.x, W.z), n = normalAt(W.x, W.z);
+  rover_obj.position.x = W.x; rover_obj.position.y = y; rover_obj.position.z = W.z; rover_obj.position.yaw = W.h;
   rover.position.set(W.x, y, W.z);
   q.setFromUnitVectors(up, n);
   rover.quaternion.copy(q).multiply(new THREE.Quaternion().setFromAxisAngle(up, W.h));
   for (const w of wheels) w.rotation.x += W.speed*dt/0.42;
   arm1.rotation.x = -W.arm*1.1; arm2.rotation.x = W.arm*1.6;
-  led.material.emissiveIntensity = module.enabled ? 2 : 0.15;
+  led.material.emissiveIntensity = roverEnabled() ? 2 : 0.15;
+  for (const o of registry.list()) if (o.id !== ROVER_ID) { const m = markerFor(o); m.position.set(o.position.x, h(o.position.x, o.position.z) + 0.6, o.position.z); m.rotation.y = o.position.yaw; }
 
   // sun
   const e = sunElev(), az = W.t/DAY*2*Math.PI;
