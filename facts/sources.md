@@ -46,8 +46,14 @@ https://meetingorganizer.copernicus.org/EPSC2026/EPSC2026-378.html
 Use: **F** for optical depth behaviour and dust deposition on sensors (relevant to solar panel degradation models).
 
 ## lemmon-2022-duststorm
-Lemmon, M. T. et al. (2022). Dust, sand and winds within an active Martian storm in Jezero crater. *Geophysical Research Letters* 49(17). Peak tau ~2 over 5-11 Jan 2022.
-Use: **F** for storm optical depth. (URL to be added by agent via DOI lookup.)
+Lemmon, M. T., Smith, M. D., Viúdez-Moreiras, D. et al. (2022). Dust, Sand, and Winds Within an Active Martian Storm in Jezero Crater. *Geophysical Research Letters* 49(17), e2022GL100126, 9 Sep 2022. doi:10.1029/2022GL100126. Open access (CC BY), Europe PMC PMC9540647. Section 3.2 "Optical Depth": "Prior to the storm, visible optical depth was near 0.3 and starting to increase from the seasonal minimum (Figure 1a)."; "Mornings had higher optical depths by 0.1–0.2 partly due to ice hazes and clouds"; storm "peak optical depths of 1.7 (visible) and 0.8 (IR)" from RDS and TIRS; "In the next sols, visible optical depths were near 0.4". Abstract: "Peak visible optical depth was ∼2". Instruments (section 2.2): Mastcam-Z Sun imaging (880 nm), Skycam and MEDA RDS Top-7 calibrated to Mastcam-Z, TIRS 9 µm.
+https://doi.org/10.1029/2022GL100126 (full text: https://europepmc.org/articles/PMC9540647)
+Use: **F** for the storm optical depth (sols 313-318, Ls 153.4-156.0) and the pre/post-storm background. Verified 2026-11-07 (full-text XML read from Europe PMC).
+
+## bell-2022-mastcamz
+Bell, J. F. III, Maki, J. N., Alwmark, S. et al. (2022). Geological, multispectral, and meteorological imaging results from the Mars 2020 Perseverance rover in Jezero crater. *Science Advances* 8(47), eabo4856, 23 Nov 2022. doi:10.1126/sciadv.abo4856. Open access (CC BY-NC), Europe PMC PMC9683734. Meteorology section: "Over the first 275 sols (solar longitude Ls ∼ 20° to 135°, through about mid-Northern summer), observed 880-nm optical depths of 0.4 to 0.5 were consistent with seasonal expectations for dust"; "The early summer decline to an optical depth (τ) of ~0.25 mimics trends at other Mars landing sites at the same season"; morning observations "systematically elevated by Δτ = 0.05 to 0.10" by water ice. Figure caption: "Derived atmospheric optical depth in Jezero crater based on direct solar imaging observations."
+https://doi.org/10.1126/sciadv.abo4856 (full text: https://europepmc.org/articles/PMC9683734)
+Use: **F** for the clear-season 880 nm optical depth over the first 275 sols of MY36 (Mastcam-Z solar imaging). Verified 2026-11-07 (full-text XML read from Europe PMC).
 
 ## meda-dustdevils-rds
 Toledo, D. et al. Dust devil frequency of occurrence and radiative effects at Jezero crater, Mars, as measured by MEDA RDS. 374 dust devils in the first 365 sols; peak 12:00-13:00 LTST.
