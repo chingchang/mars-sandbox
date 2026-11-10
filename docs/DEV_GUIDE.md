@@ -48,9 +48,9 @@ Three things to hold onto:
 | **Game client** | The web page: 3D Mars, HUD, inspector, workshop panel | Player's browser | Yes (`web/app.html`), workshop panel is MVP work |
 | **World state** | Positions, energy, time, every object and its module; applies requested actions, runs physics | Browser main thread today; a server process later for multiplayer | Yes, single-player |
 | **Sandbox runtime** | Loads `.wasm` modules into Web Workers, verifies their imports, feeds them sensor snapshots, collects their requests, enforces budget and watchdog | Browser, one worker per module | Yes, many: `runtime/registry.mjs` (R1); the rover is the first registry entry |
-| **Host API** | The fixed list of functions a module may call: read environment, request movement, spawn shapes, set state, emit signals | Defined in `behaviors/host.ts`, implemented in the runtime | Yes (rover-specific); MVP adds the generic calls |
+| **Host API** | The fixed list of functions a module may call: read environment, request movement, spawn shapes, set state, emit signals | Defined in `behaviors/host.ts`, implemented in the runtime, documented in `docs/HOST_API.md` | Yes: rover calls plus the generic calls (X1) |
 | **Module** | A compiled Wasm program the player (via the LLM) created: a behavior, a device, a creature, a structure | Inside one worker | Yes, four hand-written samples |
-| **Manifest** | JSON beside each module: name, description, declared state slots, declared signals, author, version | Stored with the module | MVP |
+| **Manifest** | JSON beside each module: name, description, declared state slots, declared signals, author, version, fact ids | Stored with the module; schema in `runtime/manifest.schema.json` | Yes (X1); the inspector panel that renders it is W2 |
 | **Workshop server** | Small HTTP service: holds the LLM key, builds the prompt from the host API and `facts/index.json`, calls the LLM, compiles AssemblyScript to Wasm with `asc`, runs the smoke tests, returns the artifact | A Node process; locally on the laptop, later on Vercel | MVP (today `generate.py` does this from the command line) |
 | **Facts layer** | Sourced, tiered Mars data: `facts/*.json` validated into `facts/index.json` | Build-time; the index ships with the client and the server | Yes |
 | **Terrain** | Real Jezero elevation: MOLA context + HiRISE 1 m playable region | Built by `terrain/*.py`, shipped as 16-bit PNG | Yes |
@@ -270,7 +270,7 @@ gantt
     F3 MCD climatology            :done, 2026-11-09, 1d
     section MVP track
     R1 multi-module runtime       :done, 2026-11-10, 1d
-    X1 generic host API + manifest:2026-11-11, 1d
+    X1 generic host API + manifest:done, 2026-11-10, 1d
     W1 workshop server            :2026-11-12, 1d
     W2 workshop panel             :2026-11-13, 2d
     A1 acceptance prompts pass    :2026-11-15, 2d

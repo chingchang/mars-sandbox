@@ -5,9 +5,9 @@
   "main": "index.js",
   "scripts": {
     "build": "./build.sh",
-    "facts": "node facts/validate.mjs",
-    "facts:check": "node facts/validate.mjs --check && node facts/derive/recompute.mjs",
-    "test": "npm run facts:check && node --test --test-timeout=30000 test/facts.test.mjs test/recompute.test.mjs test/terrain.test.mjs test/climatology.test.mjs test/runtime.test.mjs && node test/run.mjs",
+    "facts": "node facts/validate.mjs && node runtime/gen_fact_keys.mjs",
+    "facts:check": "node facts/validate.mjs --check && node facts/derive/recompute.mjs && node runtime/gen_fact_keys.mjs --check",
+    "test": "npm run facts:check && node --test --test-timeout=30000 test/facts.test.mjs test/recompute.test.mjs test/terrain.test.mjs test/climatology.test.mjs test/runtime.test.mjs test/hostapi.test.mjs && node test/run.mjs",
     "pack": "node pack.mjs"
   },
   "keywords": [],

@@ -32,6 +32,9 @@ export const LOAD_TIMEOUT_MS = 3000;
 export const OVER_BUDGET_STRIKES = 3;  // consecutive over-budget ticks before the module is disabled
 export const MEM_SLOTS = 64;
 export const SENSOR_COUNT = 14;
+export const MAX_SHAPES = 32, STATE_SLOTS = 16, MAX_SIGNALS_PER_TICK = 32, MAX_MEMORY_PAGES = 256;
+export const KIND = { ROVER: 0, ROCK: 1, CHARGER: 2, OBJECT: 3 };
+import { validateManifest } from "./manifest.mjs";
 
 export class Registry {
   /**
@@ -40,10 +43,15 @@ export class Registry {
    * @param {() => number} [opts.now]  monotonic milliseconds (performance.now)
    * @param {(ev: object) => void} [opts.onEvent]
    */
-  constructor({ spawnWorker, now = () => performance.now(), onEvent = () => {} }) {
+  constructor({ spawnWorker, now = () => performance.now(), onEvent = () => {}, world = {}, facts = null }) {
     if (typeof spawnWorker !== "function") throw new Error("Registry needs spawnWorker()");
     this.spawnWorker = spawnWorker; this.now = now; this.onEvent = onEvent;
     this.objects = new Map();
+    // world data handed to modules: terrain grid (sent at load), entities() (asked once per tick), fact table (at load)
+    this.world = { terrain: world.terrain ?? null, entities: world.entities ?? (() => new Float32Array(0)) };
+    this.facts = facts;
+    this.signals = new Map(); this.nextSignals = new Map();   // world-scoped signals: emitted this tick, readable next tick, then gone
+    this.nextIndex = 0;
   }
 
   /** Register an object. Fields exist now so persistence and multiplayer need no rewrite. */
@@ -51,7 +59,8 @@ export class Registry {
     if (!id || typeof id !== "string") throw new Error("object needs a string id");
     if (this.objects.has(id)) throw new Error(`object "${id}" already exists`);
     const object = { id, owner, version, kind, position: { x: 0, y: 0, z: 0, yaw: 0, ...position }, manifest,
-                     mem: new Float32Array(MEM_SLOTS), module: null, lastActions: null, created: this.now() };
+                     mem: new Float32Array(MEM_SLOTS), state: new Float32Array(STATE_SLOTS), shapes: new Map(),
+                     index: this.nextIndex++, module: null, lastActions: null, created: this.now() };
     this.objects.set(id, object);
     return object;
   }
@@ -75,8 +84,12 @@ export class Registry {
    * illegal import, a missing export, an init() trap, or a load timeout. On
    * rejection the previous module, if any, keeps running untouched.
    */
-  load(id, { name, bytes, logNames = {}, sensors = null }) {
+  load(id, { name, bytes, logNames = {}, sensors = null, manifest = undefined }) {
     const object = this.#need(id);
+    if (manifest !== undefined) {
+      const errs = validateManifest(manifest);
+      if (errs.length) { this.#emit({ type: "log", id, level: "err", text: `rejected "${name}": bad manifest: ${errs.join("; ")}` }); return Promise.reject(new Error("bad manifest: " + errs.join("; "))); }
+    }
     const bytesCopy = bytes instanceof Uint8Array ? new Uint8Array(bytes) : new Uint8Array(bytes);
     const w = this.spawnWorker();
     this.#emit({ type: "state", id, state: "loading", label: "verifying + instantiating" });
@@ -94,6 +107,8 @@ export class Registry {
           clearTimeout(killer);
           if (object.module?.worker) { object.module.worker.terminate(); this.#emit({ type: "log", id, level: "host", text: `old module "${object.module.name}" terminated` }); }
           const replaced = !!object.module;
+          if (replaced) this.#clearShapes(object);               // the old module's shapes go with it
+          if (manifest !== undefined) object.manifest = manifest;
           object.module = { name, worker: w, enabled: true, state: "running", inflight: false, lastSent: 0, over: 0, avgMs: 0, ticks: 0, imports: m.imports, logNames, badActions: 0 };
           if (replaced) object.version += 1;                  // "radar v2": the object's version counts successful replacements
           // bind the handler to this worker: a message from a worker that is no longer the object's module is ignored
@@ -107,7 +122,7 @@ export class Registry {
         } else if (m.type === "error") fail(m.msg);
       });
       const snapshot = sensors ?? new Float32Array(SENSOR_COUNT);
-      w.post({ type: "load", bytes: bytesCopy, sensors: snapshot, mem: object.mem }, [bytesCopy.buffer]);
+      w.post({ type: "load", bytes: bytesCopy, sensors: snapshot, mem: object.mem, world: { terrain: this.world.terrain, facts: this.facts } }, [bytesCopy.buffer]);
     });
   }
 
@@ -117,6 +132,7 @@ export class Registry {
     if (!mod) return false;
     if (mod.worker) mod.worker.terminate();
     object.module = null;
+    this.#clearShapes(object);
     this.#emit({ type: "state", id, state: "dead", label: reason });
     this.#emit({ type: "log", id, level: "host", text: `module "${mod.name}" on "${id}" ${reason}` });
     this.#emit({ type: "unloaded", id, reason, name: mod.name });
@@ -130,6 +146,9 @@ export class Registry {
    */
   tick(now, sensorsFor, dt = 1 / TICK_HZ) {
     let sent = 0;
+    this.signals = this.nextSignals; this.nextSignals = new Map();           // signals expire after one tick unless re-emitted
+    const codes = Int32Array.from(this.signals.keys()), values = Float32Array.from(this.signals.values());
+    const entities = this.world.entities();
     for (const object of this.objects.values()) {
       const mod = object.module;
       if (!mod?.enabled) continue;
@@ -141,7 +160,7 @@ export class Registry {
         continue;
       }
       mod.inflight = true; mod.lastSent = now;
-      mod.worker.post({ type: "tick", dt, sensors: sensorsFor(object) });
+      mod.worker.post({ type: "tick", dt, sensors: sensorsFor(object), entities, selfIndex: object.index, signals: { codes, values } });
       sent++;
     }
     return sent;
@@ -149,7 +168,7 @@ export class Registry {
 
   stats(id) {
     const o = this.#need(id), m = o.module;
-    return m ? { name: m.name, enabled: m.enabled, ticks: m.ticks, avgMs: m.avgMs, over: m.over, imports: m.imports, badActions: m.badActions } : null;
+    return m ? { name: m.name, enabled: m.enabled, ticks: m.ticks, avgMs: m.avgMs, over: m.over, imports: m.imports, badActions: m.badActions, shapes: o.shapes.size, memBytes: m.memBytes ?? 0 } : null;
   }
 
   #onWorkerMessage(object, m) {
@@ -173,11 +192,21 @@ export class Registry {
   static sanitizeActions(a) {
     let bad = 0;
     const num = (v, lo, hi) => { if (!Number.isFinite(v)) { bad++; return 0; } return Math.max(lo, Math.min(hi, v)); };
-    const out = { throttle: num(a.throttle, -1, 1), steer: num(a.steer, -1, 1), arm: null, led: null, logs: [], mem: [], ms: Number.isFinite(a.ms) ? a.ms : undefined };
+    const out = { throttle: num(a.throttle, -1, 1), steer: num(a.steer, -1, 1), arm: null, led: null, logs: [], mem: [], spawn: [], pose: [], remove: [], state: [], signals: [],
+                  ms: Number.isFinite(a.ms) ? a.ms : undefined, memBytes: Number.isFinite(a.memBytes) ? a.memBytes : undefined };
     if (a.arm !== null && a.arm !== undefined) out.arm = num(a.arm, 0, 1);
     if (Array.isArray(a.led) && a.led.length === 3) out.led = a.led.map(v => num(v, 0, 1));
     for (const e of Array.isArray(a.logs) ? a.logs : []) { if (Array.isArray(e) && Number.isInteger(e[0]) && Number.isFinite(e[1])) out.logs.push([e[0], e[1]]); else bad++; }
     for (const e of Array.isArray(a.mem) ? a.mem : []) { if (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < MEM_SLOTS && Number.isFinite(e[1])) out.mem.push([e[0], e[1]]); else bad++; }
+    const handle = h => Number.isInteger(h) && h >= 0 && h < MAX_SHAPES;
+    const allFinite = (arr, n) => Array.isArray(arr) && arr.length === n && arr.every(Number.isFinite);
+    for (const e of Array.isArray(a.spawn) ? a.spawn : []) {
+      if (allFinite(e, 8) && handle(e[0]) && Number.isInteger(e[1]) && e[1] >= 0 && e[1] <= 4) out.spawn.push([e[0], e[1], ...e.slice(2, 5).map(v => Math.max(0.01, Math.min(50, v))), ...e.slice(5, 8).map(v => Math.max(0, Math.min(1, v)))]); else bad++;
+    }
+    for (const e of Array.isArray(a.pose) ? a.pose : []) { if (allFinite(e, 6) && handle(e[0])) out.pose.push([...e]); else bad++; }
+    for (const h of Array.isArray(a.remove) ? a.remove : []) { if (handle(h)) out.remove.push(h); else bad++; }
+    for (const e of Array.isArray(a.state) ? a.state : []) { if (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < STATE_SLOTS && Number.isFinite(e[1])) out.state.push([e[0], e[1]]); else bad++; }
+    for (const e of Array.isArray(a.signals) ? a.signals : []) { if (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] <= 65535 && Number.isFinite(e[1]) && out.signals.length < MAX_SIGNALS_PER_TICK) out.signals.push([e[0], e[1]]); else bad++; }
     return { actions: out, bad };
   }
 
@@ -187,9 +216,27 @@ export class Registry {
       this.#emit({ type: "log", id: object.id, level: "err", text: `"${object.module.name}" on "${object.id}" sent non-finite or malformed values; they were dropped (reported once)` });
     }
     for (const [i, v] of a.mem) object.mem[i] = v;   // host-owned memory, per object
+    // shapes: handles are per object; the worker only knows its own, and the registry only honours handles it has seen spawned
+    for (const [h, shape, w, hh, d, r, g, b] of a.spawn) {
+      if (object.shapes.size >= MAX_SHAPES || object.shapes.has(h)) continue;
+      const spec = { handle: h, shape, w, h: hh, d, r, g, b, pose: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 } };
+      object.shapes.set(h, spec); this.#emit({ type: "spawn", id: object.id, object, handle: h, spec });
+    }
+    for (const [h, x, y, z, yaw, pitch] of a.pose) { const spec = object.shapes.get(h); if (!spec) continue; spec.pose = { x, y, z, yaw, pitch }; this.#emit({ type: "pose", id: object.id, object, handle: h, pose: spec.pose }); }
+    for (const h of a.remove) { if (object.shapes.delete(h)) this.#emit({ type: "remove", id: object.id, object, handle: h }); }
+    for (const [slot, v] of a.state) { object.state[slot] = v; this.#emit({ type: "slots", id: object.id, object, slot, value: v }); }
+    for (const [code, v] of a.signals) { this.nextSignals.set(code, v); this.#emit({ type: "signal", id: object.id, object, code, value: v }); }
+    if (object.module && a.memBytes !== undefined) {
+      object.module.memBytes = a.memBytes;
+      if (a.memBytes > MAX_MEMORY_PAGES * 65536) { this.#emit({ type: "log", id: object.id, level: "err", text: `memory ${a.memBytes} bytes over the ${MAX_MEMORY_PAGES}-page ceiling` }); this.unload(object.id, "disabled: memory over ceiling"); return; }
+    }
     object.lastActions = a;
     for (const [c, v] of a.logs) this.#emit({ type: "log", id: object.id, level: "mod", text: `${object.module?.name ?? "?"}: ${object.module?.logNames?.[c] ?? ("code " + c)} ${Number.isFinite(v) ? v.toFixed(2) : v}` });
     this.#emit({ type: "actions", id: object.id, object, actions: a });
+  }
+
+  #clearShapes(object) {
+    for (const h of [...object.shapes.keys()]) { object.shapes.delete(h); this.#emit({ type: "remove", id: object.id, object, handle: h }); }
   }
 
   #need(id) { const o = this.objects.get(id); if (!o) throw new Error(`no object "${id}"`); return o; }

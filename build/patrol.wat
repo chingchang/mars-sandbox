@@ -15,7 +15,7 @@
  (global $behaviors/patrol/originX (mut f32) (f32.const 0))
  (global $behaviors/patrol/originZ (mut f32) (f32.const 0))
  (global $behaviors/patrol/corner (mut i32) (i32.const 0))
- (memory $0 0)
+ (memory $0 0 256)
  (export "init" (func $behaviors/patrol/init))
  (export "tick" (func $behaviors/patrol/tick))
  (export "memory" (memory $0))

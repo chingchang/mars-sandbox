@@ -10,6 +10,11 @@ const META = [
     logNames:{20:"arrived, distance", 21:"steep slope (rad)"} },
   { name:"runaway", label:"Broken module (infinite loop)", danger:true, prompt:"(a buggy generation: hangs after 3 s so you can watch the watchdog)",
     logNames:{99:"about to hang"} },
+  // generic-API samples (X1): loadable into any object with sandbox.loadInto(id, name); the workshop panel (W2) will list them
+  { name:"weather_station", label:"Weather station (generic API)", hidden:true, prompt:"a weather station: mast, panel, counts sols, pulses a signal every Mars hour",
+    logNames:{30:"hour pulse", 31:"tier of the temperature fact"} },
+  { name:"beacon", label:"Proximity beacon (generic API)", hidden:true, prompt:"a beacon that lights up when any rover is within 20 metres",
+    logNames:{50:"lit (1) / dark (0)"} },
 ];
 
 const behaviors = META.map(m => ({
@@ -28,4 +33,5 @@ writeFileSync("dist/index.html", html);
 cpSync("web/terrain", "dist/terrain", { recursive: true });
 cpSync("web/png16.mjs", "dist/png16.mjs");
 cpSync("runtime", "dist/runtime", { recursive: true });
+mkdirSync("dist/facts", { recursive: true }); cpSync("facts/index.json", "dist/facts/index.json");   // fact(key) table for the workers
 console.log(`dist/index.html written (${(html.length/1024).toFixed(0)} KB)`);

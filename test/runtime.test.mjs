@@ -132,7 +132,7 @@ test("non-finite values from a hostile module never reach the host: zeroed or dr
   assert.deepEqual(Float32Array.from(reg.get("h").mem), memBefore, "object memory untouched by Infinity/NaN writes");
   // host-side boundary check, independent of the worker: feed raw garbage straight into the sanitiser
   const { actions, bad } = Registry.sanitizeActions({ throttle: NaN, steer: Infinity, arm: -Infinity, led: [NaN, 2, -1], logs: [[1, NaN], [2, 3], "x"], mem: [[0, Infinity], [70, 1], [1, 0.5]], ms: NaN });
-  assert.deepEqual(actions, { throttle: 0, steer: 0, arm: 0, led: [0, 1, 0], logs: [[2, 3]], mem: [[1, 0.5]], ms: undefined });
+  assert.deepEqual(actions, { throttle: 0, steer: 0, arm: 0, led: [0, 1, 0], logs: [[2, 3]], mem: [[1, 0.5]], spawn: [], pose: [], remove: [], state: [], signals: [], ms: undefined, memBytes: undefined });
   assert.equal(bad, 8);   // throttle, steer, arm, one LED NaN, one NaN log, one malformed log, one Infinity mem write, one out-of-range slot
   const errs = events.filter(e => e.type === "log" && e.level === "err" && e.id === "h");
   assert.equal(errs.length, 0, "worker-side validation means the registry sees clean actions from this module");

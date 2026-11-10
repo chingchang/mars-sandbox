@@ -109,7 +109,8 @@ const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 //   ?terrain=mola        MOLA MEGDR 128 ppd, 460 m/px, 40 x 40 km (crater context)
 //   ?terrain=procedural  the original toy heightfield, kept for tests
 import { decodePng16, makeSampler } from "./png16.mjs";
-import { Registry, browserSpawner, BUDGET_MS, TICK_HZ } from "./runtime/registry.mjs";
+import { Registry, browserSpawner, BUDGET_MS, TICK_HZ, KIND } from "./runtime/registry.mjs";
+import { buildFactTable } from "./runtime/facts.mjs";
 const TERRAINS = {
   hirise: { file: "terrain/jezero_hirise_5km", seg: 500 },
   mola:   { file: "terrain/jezero_mola_40km",  seg: 86 },
@@ -283,7 +284,21 @@ function physics(dt) {
 // Every live object (the rover first) is a registry entry with an owner, a version, a position,
 // 64 floats of host-owned memory and zero or one module worker. The registry enforces the
 // allow-list, the per-worker budget and the watchdog; the page applies each object's requests.
-const registry = new Registry({ spawnWorker: browserSpawner(new URL("./runtime/worker.mjs", location.href)), onEvent: onRegistryEvent });
+// world data for modules: a 16 m terrain grid (relative to the site, like h()), the entities list, the fact table
+const workerTerrain = (() => { const res = 16, n = Math.floor(Math.min(SIZE, 5000) / res) | 1, c = (n - 1) / 2, data = new Float32Array(n * n);
+  for (let r = 0; r < n; r++) for (let col = 0; col < n; col++) data[r * n + col] = h((col - c) * res, (r - c) * res);
+  return { n, res, cx: c, cz: c, data }; })();
+const factTable = await (async () => { try {
+  const [index, keys] = await Promise.all([fetch("facts/index.json").then(r => r.json()), fetch("runtime/fact_keys.json").then(r => r.json())]);
+  return buildFactTable(index, keys); } catch (e) { console.warn("fact table unavailable", e); return null; } })();
+const registry = new Registry({ spawnWorker: browserSpawner(new URL("./runtime/worker.mjs", location.href)), onEvent: onRegistryEvent,
+  world: { terrain: workerTerrain, entities: () => {
+    const out = [];
+    for (const o of registry.list()) out.push(o.id === ROVER_ID ? KIND.ROVER : KIND.OBJECT, o.position.x, o.position.z, o.index);
+    for (const r of rocks) out.push(KIND.ROCK, r.x, r.z, -1);
+    out.push(KIND.CHARGER, CHARGER.x, CHARGER.z, -1);
+    return Float32Array.from(out);
+  } }, facts: factTable });
 const ROVER_ID = "rover";
 const rover_obj = registry.add({ id: ROVER_ID, owner: "player", version: 1, kind: "rover", position: { x: 0, y: 0, z: 0, yaw: 0 } });
 rover_obj.mem = W.mem;                                       // the rover's host memory is the world's existing slot array
@@ -301,11 +316,36 @@ function logLine(cls, text) {
 
 // generic objects: anything that is not the rover gets a marker and the same simple kinematics
 // (X1 gives them shapes and the generic host calls; W2 gives them a panel)
-const markers = new Map();
+const markers = new Map();           // object id -> THREE.Group at the object's position (the rover uses its own group)
 function markerFor(obj) {
+  if (obj.id === ROVER_ID) return rover;
   if (markers.has(obj.id)) return markers.get(obj.id);
-  const m = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), new THREE.MeshStandardMaterial({ color: 0x6fe3a0, emissive: 0x1f6f45, emissiveIntensity: 0.6 }));
-  m.castShadow = true; scene.add(m); markers.set(obj.id, m); return m;
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.3, 0.8), new THREE.MeshStandardMaterial({ color: 0x6fe3a0, emissive: 0x1f6f45, emissiveIntensity: 0.6 }));
+  base.position.y = 0.15; base.castShadow = true; g.add(base); scene.add(g); markers.set(obj.id, g); return g;
+}
+const shapeMeshes = new Map();       // `${id}/${handle}` -> mesh
+function shapeGeometry(spec) {
+  switch (spec.shape) {
+    case 1: return new THREE.CylinderGeometry(spec.w / 2, spec.w / 2, spec.h, 16);
+    case 2: return new THREE.SphereGeometry(spec.w / 2, 16, 12);
+    case 3: return new THREE.ConeGeometry(spec.w / 2, spec.h, 16);
+    case 4: return new THREE.BoxGeometry(spec.w, spec.h, Math.max(0.01, Math.min(spec.d, 0.05)));
+    default: return new THREE.BoxGeometry(spec.w, spec.h, spec.d);
+  }
+}
+function onShapeEvent(ev) {
+  const key = `${ev.id}/${ev.handle}`;
+  if (ev.type === "spawn") {
+    const mesh = new THREE.Mesh(shapeGeometry(ev.spec), new THREE.MeshStandardMaterial({ color: new THREE.Color(ev.spec.r, ev.spec.g, ev.spec.b), roughness: 0.7 }));
+    mesh.castShadow = true; markerFor(ev.object).add(mesh); shapeMeshes.set(key, mesh);
+  } else if (ev.type === "pose") {
+    const mesh = shapeMeshes.get(key); if (!mesh) return;
+    mesh.position.set(ev.pose.x, ev.pose.y, ev.pose.z); mesh.rotation.set(ev.pose.pitch, ev.pose.yaw, 0);
+  } else if (ev.type === "remove") {
+    const mesh = shapeMeshes.get(key); if (!mesh) return;
+    mesh.parent?.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); shapeMeshes.delete(key);
+  }
 }
 function sensorsForObject(obj) {
   if (obj.id === ROVER_ID) return sensorsCache;
@@ -320,6 +360,8 @@ function onRegistryEvent(ev) {
   if (ev.type === "log") { logLine(ev.level === "err" ? "err" : ev.level === "mod" ? "mod" : "host", ev.text); return; }
   if (ev.type === "state" && ev.id === ROVER_ID) { setState(ev.state, ev.label); if (ev.state === "dead") { el("s-imports").textContent = "—"; currentName = null; } return; }
   if (ev.type === "loaded" && ev.id === ROVER_ID) { el("modname").textContent = currentName; el("s-imports").textContent = ev.imports.length + " ok"; return; }
+  if (ev.type === "spawn" || ev.type === "pose" || ev.type === "remove") { onShapeEvent(ev); return; }
+  if (ev.type === "slots" || ev.type === "signal") return;            // the inspector (W2) renders these from the manifest
   if (ev.type === "actions") {
     if (ev.id === ROVER_ID) applyActions(ev.actions);
     else applyObjectActions(ev.object, ev.actions);
@@ -347,6 +389,7 @@ window.sandbox = {
   registry,
   addObject(id, x = 0, z = 0, owner = "player") { const o = registry.add({ id, owner, position: { x, y: 0, z, yaw: 0 } }); markerFor(o); return o; },
   loadInto(id, name) { const b = BEHAVIORS.find(x => x.name === name); if (!b) throw new Error(`no sample "${name}"`); loadModule(b.name, b64(b.wasm), b.logNames, id); },
+  state(id) { return Array.from(registry.get(id).state); },
   unload(id) { unloadModule("unloaded", id); },
 };
 
@@ -355,6 +398,7 @@ let selected = BEHAVIORS[0].name;
 function renderChips() {
   const C = el("chips"); C.innerHTML = "";
   for (const b of BEHAVIORS) {
+    if (b.hidden) continue;                          // generic-API samples load through sandbox.loadInto until W2
     const c = document.createElement("button"); c.className = "chip" + (b.name===selected?" sel":"") + (b.danger?" danger":""); c.textContent = b.label;
     c.onclick = () => { selected = b.name; renderChips(); };
     C.appendChild(c);

@@ -10,8 +10,9 @@ Proof of concept for the "player extends the running game" loop. For the compone
 
 ## Layout
 
-    behaviors/host.ts        the whole host API: 14 sensor keys, 5 actuator/log imports, 2 memory slots
-    behaviors/*.ts           sample "generated" behaviors (patrol, return_home, seek_target, runaway)
+    behaviors/host.ts        the whole host API: 14 sensor keys, 18 imports (rover actuators + generic spawn/pose/state/signals/world/facts), FACT_* keys
+    behaviors/*.ts           sample modules: rover behaviours (patrol, return_home, seek_target), hostile ones (runaway, nonfinite, memhog),
+                             and generic-API objects (weather_station, beacon)
     build.sh                 compile behaviors to build/*.wasm
     test/run.mjs             checks each sample does its job in a toy world
     test/smoke.mjs           generic acceptance test used by generate.py
@@ -26,6 +27,9 @@ Proof of concept for the "player extends the running game" loop. For the compone
     web/png16.mjs            16-bit PNG decoder + heightmap sampler shared by the client and tests
     runtime/registry.mjs     multi-object sandbox runtime: registry, no-gap swap, per-worker budget + watchdog
     runtime/worker.mjs       the sandbox worker (browser Web Worker or Node worker_threads), import allow-list
+    runtime/manifest.*       module manifest schema (+ dependency-free check); runtime/fact_keys.json the append-only fact(key) map
+    docs/HOST_API.md         every host call in one paragraph; the design agent's prompt is built from it
+    test/hostapi.test.mjs    generic API: weather station + beacon samples, handles per object, memory ceiling, manifests
     test/runtime.test.mjs    three modules tick together; a hang kills only its object; swap leaves others untouched
     test/terrain.test.mjs    every heightmap decodes to what its sidecar claims
     test/facts.test.mjs      validator tests (each violation class has a fixture)
