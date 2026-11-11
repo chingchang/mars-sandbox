@@ -17,10 +17,12 @@ const META = [
     logNames:{50:"lit (1) / dark (0)"} },
 ];
 
+import { existsSync } from "node:fs";
 const behaviors = META.map(m => ({
   ...m,
   source: readFileSync(`behaviors/${m.name}.ts`, "utf8"),
   wasm: readFileSync(`build/${m.name}.wasm`).toString("base64"),
+  manifest: existsSync(`behaviors/${m.name}.manifest.json`) ? JSON.parse(readFileSync(`behaviors/${m.name}.manifest.json`, "utf8")) : null,
 }));
 
 const host = readFileSync("behaviors/host.ts", "utf8").replace(/<\/script/gi, "<\\/script");
@@ -32,6 +34,7 @@ writeFileSync("dist/index.html", html);
 // terrain heightmaps and the 16-bit PNG decoder are fetched at runtime, not embedded
 cpSync("web/terrain", "dist/terrain", { recursive: true });
 cpSync("web/png16.mjs", "dist/png16.mjs");
+writeFileSync("dist/workshop.mjs", readFileSync("web/workshop.mjs", "utf8").replaceAll("../runtime/", "./runtime/"));   // the workshop panel (W2); runtime/ sits beside it in dist
 cpSync("runtime", "dist/runtime", { recursive: true });
 mkdirSync("dist/facts", { recursive: true }); cpSync("facts/index.json", "dist/facts/index.json");   // fact(key) table for the workers
 console.log(`dist/index.html written (${(html.length/1024).toFixed(0)} KB)`);
