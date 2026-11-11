@@ -12,7 +12,7 @@ import { createWorkshopServer } from "../workshop/server.mts";
 import { LlmError } from "../workshop/llm.mts";
 import { readIndex, readKeys } from "../workshop/prompt.mts";
 import { CHECKS, weatherStation, beacon, solarPanel, creature, dustGauge, occluded } from "./acceptance/behaviour.mjs";
-import { judgeTranscript, listTranscripts } from "./acceptance/judge.mjs";
+import { judgeTranscript, listTranscripts, questionsBeforeBuild, summarize } from "./acceptance/judge.mjs";
 import { questionFactIds, otherFactIds, numbersWithoutFacts, unsourcedNumbersIn, transcriptName, ACCEPTANCE_PROMPTS, runPrompt } from "../workshop/acceptance/run.mts";
 
 const read = p => readFileSync(new URL(p, import.meta.url));
@@ -53,9 +53,14 @@ test("fact ids in a question: brackets count, other punctuation is recorded apar
   assert.deepEqual(all["source comments"], ["190 K", "586 W/m^2"]);
 });
 
-test("check 1: the weather station sample passes; a module that never logs or flags fails; one that logs every tick fails on cadence", async () => {
+test("check 1: the weather station sample passes; a module that never logs or flags fails; one that logs every tick fails on cadence; thresholds of 240 K and 197 K fail", async () => {
   const r = await weatherStation(wasm("weather_station"), STATION_MANIFEST);
-  assert.equal(r.pass, true, r.evidence.join(" | ")); assert.match(r.evidence[0], /^2[0-9] ticks with a log/); assert.match(r.evidence[2], /at 5 h \(19[0-9]\.\d K\): red shape at y/);
+  assert.equal(r.pass, true, r.evidence.join(" | ")); assert.match(r.evidence[0], /^2[0-9] ticks with a log/); assert.match(r.evidence[2], /5 h \(19[0-9]\.\d K\): red shape at y/); assert.match(r.evidence[2], /1\.5 h \(20[01]\.\d K\): red shape at y/); assert.match(r.evidence[2], /7\.5 h \(20[5-7]\.\d K\): red shape none/);
+  for (const k of ["240.0", "197.0"]) {
+    const c = await compileAndTest(STATION_SRC.replace("const COLD_K: f32 = 203.15;", `const COLD_K: f32 = ${k};`)); assert.ok(c.ok);
+    const t = await weatherStation(c.wasm, STATION_MANIFEST);
+    assert.equal(t.pass, false, `${k} K threshold: ${t.evidence.join(" | ")}`);
+  }
   const idle = await weatherStation(wasm("patrol"), null);
   assert.equal(idle.pass, false, idle.evidence.join(" | "));
   const chatty = STATION_SRC.replace("log(LOG_HOUR, temp);                                 // the hourly temperature log", "").replace("state_set(SLOT_T_NOW_K, temp);", "state_set(SLOT_T_NOW_K, temp); log(LOG_HOUR, temp);");
@@ -73,16 +78,23 @@ test("check 2: the beacon sample passes at the 20 m line; 16 m and 24 m radii fa
     const b = await beacon(c.wasm, null);
     assert.equal(b.pass, false, `${radius} m: ${b.evidence.join(" | ")}`);
   }
+  const inverted = await compileAndTest(src.replace("(d >= 0.0 && d < TRIGGER_M) ? 1 : 0", "(d >= 0.0 && d < TRIGGER_M) ? 0 : 1")); assert.ok(inverted.ok);
+  const inv = await beacon(inverted.wasm, null);
+  assert.equal(inv.pass, false, `inverted: ${inv.evidence.join(" | ")}`); assert.match(inv.evidence.join(" | "), /not a lighting-up/);
   assert.equal((await beacon(wasm("churn"), null)).pass, false);
 });
 
 test("check 3: the solar-panel fixture passes, also when it parks at night; the beacon fails", async () => {
   const r = await solarPanel(await fixture("solar_panel"), null);
-  assert.equal(r.pass, true, r.evidence.join(" | ")); assert.match(r.evidence[1], /at noon/);
+  assert.equal(r.pass, true, r.evidence.join(" | ")); assert.match(r.evidence[0], /settled at every hour/); assert.match(r.evidence[1], /one direction/); assert.match(r.evidence[2], /at noon/);
   const parking = fixtureSrc("solar_panel").replace("pose(panel, 0.0, 1.4, 0.0, yaw, 0.3);", "pose(panel, 0.0, 1.4, 0.0, elev > 0.0 ? yaw : 0.0, 0.3);");
   const c = await compileAndTest(parking); assert.ok(c.ok, c.ok ? "" : c.error);
   const p = await solarPanel(c.wasm, { name: "p", description: "d", version: 1, author: "a", state: [{ slot: 0, label: "output", unit: "W" }, { slot: 1, label: "yaw", unit: "rad" }] });
-  assert.equal(p.pass, true, p.evidence.join(" | ")); assert.match(p.evidence[1], /^"output" \(W\)/);
+  assert.equal(p.pass, true, p.evidence.join(" | ")); assert.match(p.evidence[2], /^"output" \(W\)/);
+  const spin = await solarPanel(await fixture("solar_panel_spin"), null);
+  assert.equal(spin.pass, false, spin.evidence.join(" | ")); assert.match(spin.evidence[0], /never settled/);
+  const motor = await solarPanel(await fixture("solar_panel_motor"), { name: "m", description: "d", version: 1, author: "a", state: [{ slot: 0, label: "output", unit: "W" }] });
+  assert.equal(motor.pass, true, motor.evidence.join(" | ")); assert.match(motor.evidence[0], /settled at every hour/);
   assert.equal((await solarPanel(wasm("beacon"), null)).pass, false);
 });
 
@@ -91,9 +103,15 @@ test("check 4: occlusion geometry; the creature fixture hides; the wander-only c
   assert.equal(occluded({ x: 0, z: 0 }, { x: 10, z: 0 }, [{ x: 5, z: 2.0, r: 1.2 }]), null, "2 m off the line is not occlusion");
   assert.equal(occluded({ x: 0, z: 0 }, { x: 10, z: 0 }, [{ x: 12, z: 0, r: 1.2 }]), null, "beyond the rover is not between");
   const r = await creature(await fixture("creature"), null);
-  assert.equal(r.pass, true, r.evidence.join(" | ")); assert.match(r.evidence[1], /occluded$/); assert.match(r.evidence[2], /no rock between them/);
+  assert.equal(r.pass, true, r.evidence.join(" | ")); assert.match(r.evidence[1], /it reacted to the rover/); assert.match(r.evidence[2], /it stopped after/); assert.match(r.evidence[3], /^then occluded in (8|9|10) of 10 samples/); assert.match(r.evidence[4], /no rock between them/);
   const w = await creature(await fixture("wander_only"), null);
-  assert.equal(w.pass, false, w.evidence.join(" | "));
+  assert.equal(w.pass, false, w.evidence.join(" | ")); assert.match(w.evidence[1], /no reaction to the rover/);
+  const fast = await compileAndTest(fixtureSrc("wander_only").replace("phase += dt * 0.7; drive(0.5, Mathf.sin(phase) * 0.6);", "phase += dt * 1.3; drive(0.6, Mathf.sin(phase) * 0.5);")); assert.ok(fast.ok);
+  const f = await creature(fast.wasm, null);
+  assert.equal(f.pass, false, `faster wanderer: ${f.evidence.join(" | ")}`); assert.match(f.evidence[1], /no reaction to the rover/);
+  const slow = await compileAndTest(fixtureSrc("creature").replace("drive(dist > 0.8 ? 0.9 : 0.0, clamp(err * 1.5, -1.0, 1.0));", "drive(dist > 0.8 ? 0.3 : 0.0, clamp(err * 1.5, -1.0, 1.0));")); assert.ok(slow.ok);
+  const s = await creature(slow.wasm, null);
+  assert.equal(s.pass, true, `slow hider: ${s.evidence.join(" | ")}`); assert.match(s.evidence[2], /it stopped after/);
   assert.equal((await creature(wasm("patrol"), null)).pass, false);
 });
 
@@ -108,6 +126,8 @@ test("check 5: the dust-gauge fixture's estimate rises fourfold with the tau fac
   const s = await compileAndTest(storm); assert.ok(s.ok);
   const st = await dustGauge(s.wasm, { name: "g", description: "d", version: 1, author: "a", fact_ids: ["jezero.dust.optical_depth_storm_jan2022"], state: [{ slot: 0, label: "dirt estimate" }, { slot: 1, label: "tau" }] });
   assert.equal(st.pass, true, st.evidence.join(" | ")); assert.match(st.evidence[1], /^"dirt estimate"/);
+  const hourly = await dustGauge(await fixture("dust_gauge_hourly"), null);
+  assert.equal(hourly.pass, true, `hourly gauge: ${hourly.evidence.join(" | ")}`); assert.match(hourly.evidence[1], /ratio 4\.00/);
   assert.equal((await dustGauge(wasm("weather_station"), null)).pass, false);
   assert.deepEqual(Object.keys(CHECKS), ["1", "2", "3", "4", "5"]);
 });
@@ -152,9 +172,17 @@ test("judge: a good transcript passes with evidence; failed or over-tries transc
     const f = await runPrompt(3, { startServer: inProcess(recorded([moduleReply(STATION_MANIFEST, STATION_SRC.replace("let flagUp: i32 = -1;", 'let flagUp: i32 = "x";'))]).llm), outDir: dir, quiet: true });
     const jf = await judgeTranscript(f.file);
     assert.equal(jf.verdict, "fail"); assert.match(jf.why, /no module/);
-    const edited = JSON.parse(readFileSync(t.file, "utf8")); edited.tries = 3; edited.source = edited.source.replace("COLD_K: f32 = 203.15", "COLD_K: f32 = 210.0");
-    const ef = path.join(dir, "1-edited.json"); writeFileSync(ef, JSON.stringify(edited));
-    const je = await judgeTranscript(ef);
-    assert.equal(je.hash_match, false, "a source that does not rebuild to the recorded bytes is caught"); assert.equal(je.verdict, "fail"); assert.match(je.why, /3 tries/);
+    assert.deepEqual(questionsBeforeBuild(JSON.parse(readFileSync(t.file, "utf8"))), [QUESTION]);
+    const tamper = async (name, mutate, expectVerdict, expectWhy) => { const x = JSON.parse(readFileSync(t.file, "utf8")); mutate(x); const f2 = path.join(dir, `1-${name}.json`); writeFileSync(f2, JSON.stringify(x)); const j2 = await judgeTranscript(f2); assert.equal(j2.verdict, expectVerdict, `${name}: ${j2.why}`); assert.match(j2.why, expectWhy, name); return j2; };
+    await tamper("source-edited", x => { x.source = x.source.replace("COLD_K: f32 = 203.15", "COLD_K: f32 = 210.0"); }, "inconsistent", /source does not rebuild to the recorded sha256/);
+    await tamper("source-swapped", x => { x.source = fixtureSrc("dust_gauge").replace("dirt += tau * dt * 0.01;", "dirt = 0.0;"); }, "inconsistent", /source does not rebuild/);
+    await tamper("bytes-swapped", x => { x.wasm_base64 = Buffer.from(read("../build/patrol.wasm")).toString("base64"); }, "inconsistent", /recorded bytes do not hash/);
+    await tamper("question-emptied", x => { x.turns[0].answer.text = "Sure, building it now."; x.questions = [{ text: "", fact_ids: [] }]; x.question_fact_grounded = true; }, "fail", /no fact-grounded question/);
+    await tamper("questions-removed", x => { x.turns = x.turns.filter(u => u.answer.type !== "questions"); delete x.questions; x.question_fact_grounded = true; }, "fail", /no fact-grounded question/);
+    const jr = await tamper("other-punctuation", x => { x.turns[0].answer.text = "Should it read at 1.45 m like the MEDA mast `jezero.temperature.my36_air_hourly_mean`?"; }, "reviewer", /without brackets/);
+    assert.deepEqual(jr.question_other_ids, ["jezero.temperature.my36_air_hourly_mean"]);
+    await tamper("three-tries", x => { x.tries = 3; }, "fail", /3 tries/);
+    const groups = summarize([{ system_sha256: "a", verdict: "pass", prompt_number: 1 }, { system_sha256: "a", verdict: "fail", prompt_number: 2 }, { system_sha256: "b", verdict: "reviewer", prompt_number: 1 }]);
+    assert.deepEqual(groups, [{ hash: "a", total: 2, pass: 1, reviewer: 0, prompts: [1, 2] }, { hash: "b", total: 1, pass: 0, reviewer: 1, prompts: [1] }]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

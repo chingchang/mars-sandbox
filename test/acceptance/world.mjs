@@ -49,14 +49,20 @@ export async function makeWorld({ rocks = [], rover = { x: 0, z: 0 }, hour = 10,
   };
   w.applyActions = () => { for (const ev of events.splice(0)) { w.log.push(ev); if (ev.type === "actions" && ev.object) { ev.object.position.throttle = ev.actions.throttle; ev.object.position.steer = ev.actions.steer; } } };
   w.log = [];
-  /** Tick n times: kinematics, then the registry; world time advances dt and the hour by hourPerTick. */
-  w.run = async (n, dt = 0.05, pause = 20) => {
+  /**
+   * Tick n times: kinematics from the last actions, then the registry; world time advances dt and the
+   * hour by hourPerTick. After each tick the world waits (up to `wait` ms) for every live module's
+   * actions, so two runs of the same module follow the same path and a tick is never skipped.
+   */
+  w.run = async (n, dt = 0.05, wait = 300) => {
     for (let i = 0; i < n; i++) {
       w.applyActions();
       for (const o of reg.list()) if (o.id !== "rover") kinematics(o, dt);
+      const live = reg.list().filter(o => reg.enabled(o.id)).map(o => o.id);
       reg.tick(performance.now(), w.sensorsFor);
       w.t += dt; w.hour = (w.hour + w.hourPerTick) % 24;
-      await sleep(pause);
+      const t0 = Date.now();
+      while (live.some(id => reg.enabled(id) && !events.some(e => e.type === "actions" && e.id === id)) && Date.now() - t0 < wait) await sleep(1);
     }
     w.applyActions();
   };

@@ -20,9 +20,12 @@ conversation; that turn is recorded too. Nothing is edited after the fact.
 
 Judging is offline and rerunnable: `node test/acceptance/judge.mjs` (also part of
 `npm test`) rebuilds each transcript's source with the workshop's compile and smoke test,
-compares the hash with the recorded module, loads it through the registry and runs the
-prompt's behaviour check from `test/acceptance/behaviour.mjs`, printing the evidence. A
-pass needs the check, at most two tries, and a fact-grounded question before the build.
+requires the rebuilt bytes and the recorded bytes to both hash to the recorded sha256
+(otherwise the verdict is "inconsistent"), loads the rebuilt module through the registry
+and runs the prompt's behaviour check from `test/acceptance/behaviour.mjs`, and recomputes
+from the recorded turns whether a question citing a live fact id came before the build.
+A pass needs the check, at most two tries, and that question; an id cited without brackets
+is reported for the reviewer. Results are counted per system prompt hash.
 
 ## Results
 
