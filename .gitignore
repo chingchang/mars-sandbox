@@ -7,3 +7,6 @@ data/raw/
 .venv/
 facts/derive/out/*_sols.json
 .supervisor/
+.env
+.env.*
+!.env.example

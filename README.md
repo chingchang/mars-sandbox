@@ -15,9 +15,10 @@ Proof of concept for the "player extends the running game" loop. For the compone
                              and generic-API objects (weather_station, beacon)
     build.sh                 compile behaviors to build/*.wasm
     test/run.mjs             checks each sample does its job in a toy world
-    test/smoke.mjs           generic acceptance test used by generate.py
+    test/smoke.mjs           generic acceptance test used by the workshop server (and generate.py)
     test/browser.py          drives the real page in headless Chrome (playwright)
-    generate.py              prompt -> source -> compile -> test -> retry loop (Anthropic or OpenAI key)
+    workshop/                the workshop server (W1): POST a conversation, get questions or a tested module
+    generate.py              the older CLI version of the same loop (superseded by workshop/)
     web/app.html             the Three.js world + worker host (template)
     pack.mjs                 embeds compiled modules into dist/index.html (single file)
     facts/                   the sourced Mars knowledge layer (see facts/README.md)
@@ -44,7 +45,9 @@ Proof of concept for the "player extends the running game" loop. For the compone
 Generate a new behavior from a prompt and load it with "Load my own .wasm":
 
     export ANTHROPIC_API_KEY=...
-    python3 generate.py "zigzag toward the charger and stop 3 m short" --name zigzag
+    cp .env.example .env            # ANTHROPIC_API_KEY=...  (gitignored, never committed)
+    npm run workshop                # POST http://127.0.0.1:8787/workshop {"messages":[{"role":"user","content":"..."}]}
+    python3 generate.py "zigzag toward the charger and stop 3 m short" --name zigzag   # older CLI loop
 
 ## Terrain
 
