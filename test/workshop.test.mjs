@@ -5,13 +5,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import http from "node:http";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { buildSystemPrompt, factKeyName, factLines, liveFactIds, principles, readIndex, readKeys, REPLY_PROTOCOL } from "../workshop/prompt.mts";
-import { checkModule, MARKERS, parseReply, runWorkshop, slug } from "../workshop/pipeline.mts";
-import { compileAndTest } from "../workshop/compile.mts";
-import { createWorkshopServer, parseConversation } from "../workshop/server.mts";
+import { checkModule, MARKERS, moduleSpecifiers, parseReply, runWorkshop, slug } from "../workshop/pipeline.mts";
+import { compileAndTest, compileSource } from "../workshop/compile.mts";
+import { createWorkshopServer, hostAllowed, originAllowed, parseConversation } from "../workshop/server.mts";
 import { scanRepo, scanText } from "../scripts/check_secrets.mjs";
 import { validateManifest } from "../runtime/manifest.mjs";
 import { memoryPolicy } from "../runtime/wasm_limits.mjs";
@@ -35,6 +36,13 @@ function recorded(script) {
 }
 const BROKEN_SRC = STATION_SRC.replace("let flagUp: i32 = -1;", 'let flagUp: i32 = "not a number";');       // type error
 const IDLE_SRC = 'import { read } from "./host";\nexport function init(): void {}\nexport function tick(dt: f32): void { read(0); }\n';   // compiles, does nothing
+/** A raw request (fetch refuses to send Origin and Host headers); resolves to { status, headers, json }. */
+const raw = (port, method, path, headers = {}, body = null) => new Promise((resolve, reject) => {
+  const req = http.request({ host: "127.0.0.1", port, method, path, headers: { ...(body ? { "content-length": Buffer.byteLength(body) } : {}), ...headers } }, res => {
+    let text = ""; res.on("data", c => text += c); res.on("end", () => { let json = null; try { json = JSON.parse(text); } catch {} resolve({ status: res.statusCode, headers: res.headers, json }); });
+  });
+  req.on("error", reject); if (body) req.write(body); req.end();
+});
 const fakeBuild = async () => ({ ok: true, wasm: Uint8Array.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]), report: "fake build" });
 
 test("system prompt: every live fact id, no superseded id, the shared files and the principles, deterministic", () => {
@@ -74,11 +82,48 @@ test("checkModule: manifest errors, unknown and superseded fact ids, foreign imp
     'import { fetch } from "./net";\nimport { read } from "./host";\nexport function init(): void {}\n')), index);
   assert.ok(bad.problems.some(p => p.includes(`"${SUPERSEDED}" is superseded by "${index.facts[SUPERSEDED].superseded_by}"`)), bad.problems.join("|"));
   assert.ok(bad.problems.some(p => p.includes('"mars.no.such_fact" is not in the fact index')));
-  assert.ok(bad.problems.some(p => p.includes('imports from "./net"')));
+  assert.ok(bad.problems.some(p => p.includes('refers to "./net"')));
   assert.ok(bad.problems.some(p => p.includes("must export init()")));
   assert.ok(bad.problems.some(p => p.startsWith("manifest: ")), "the runtime manifest check runs too");
   assert.ok(checkModule(parseReply(`${MARKERS[0]}\n{not json\n${MARKERS[1]}\nx\n${MARKERS[2]}\n`), index).problems[0].startsWith("manifest is not valid JSON"));
   assert.equal(slug("Weather Station v2!"), "weather_station_v2"); assert.equal(slug(""), "module"); assert.equal(slug("12 rocks"), "rocks");
+});
+
+test("static check: every foreign module specifier form is refused before the compiler runs", async () => {
+  const forms = {
+    side_effect: 'import "../../outside/victim";', star: 'export * from "../../outside/victim";', named: 'export { read } from "../../outside/victim";',
+    default_import: 'import victim from "../../outside/victim";', dynamic: 'const v = import("../../outside/victim");', absolute: 'import { x } from "/etc/hostname";',
+    reference: '/// <reference path="../../outside/victim.ts" />', require: 'const v = require("../../outside/victim");',
+  };
+  assert.deepEqual(moduleSpecifiers(STATION_SRC), ["./host"]);
+  assert.deepEqual(moduleSpecifiers('export * from "./host";\nimport "./host";'), ["./host", "./host"]);
+  for (const [name, line] of Object.entries(forms)) {
+    const src = line + "\n" + STATION_SRC;
+    assert.ok(moduleSpecifiers(src).some(s => s !== "./host"), `${name}: specifier seen`);
+    let builds = 0; const countingBuild = async () => { builds++; return { ok: true, wasm: new Uint8Array(8), report: "" }; };
+    const { llm } = recorded([moduleReply(STATION_MANIFEST, src)]);
+    const r = await runWorkshop({ messages: [{ role: "user", content: "x" }], llm, index, keys, tries: 1, build: countingBuild });
+    assert.equal(r.type, "failed", name); assert.equal(builds, 0, `${name}: never compiled`);
+    assert.match(r.log[0].error, /the only module that exists is "\.\/host"/, name);
+  }
+});
+
+test("compiler sandbox: even with the static check bypassed, a file outside the temp directory is never read", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "victim-"));
+  try {
+    const marker = "SECRET_MARKER_" + Math.random().toString(36).slice(2);
+    const victim = path.join(dir, "victim.ts");
+    writeFileSync(victim, `const leak: i32 = "${marker}";\n`);                 // a type error that would quote this line if the compiler read it
+    const rel = path.relative(process.cwd(), victim).replace(/\.ts$/, "");
+    for (const [name, line] of [["absolute", `import "${victim.replace(/\.ts$/, "")}";`], ["relative", `import "${rel.startsWith(".") ? rel : "./" + rel}";`], ["star", `export * from "${victim.replace(/\.ts$/, "")}";`]]) {
+      const r = await compileAndTest(line + "\n" + STATION_SRC);
+      assert.equal(r.ok, false, name);
+      assert.match(r.error, /not found/, name);
+      assert.ok(!r.error.includes(marker), `${name}: the outside file's content is not in the error`);   // the path itself is echoed: it is the model's own import line
+    }
+    const c = await compileSource(STATION_SRC);
+    assert.ok(c.ok); assert.ok(Buffer.compare(Buffer.from(c.wasm), readFileSync(new URL("build/weather_station.wasm", root))) === 0, "in-memory compile matches build.sh byte for byte");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("recorded conversation: the agent asks first, then builds the weather station through asc and the smoke test", async () => {
@@ -148,6 +193,42 @@ test("parseConversation: shape and bounds of what the page may send", () => {
   }
 });
 
+test("HTTP: only local pages may call the server; wrong host, origin or content type are refused before the model is called", async () => {
+  for (const o of ["http://localhost", "http://localhost:8000", "http://127.0.0.1:5173", "http://[::1]:3000"]) assert.ok(originAllowed(o), o);
+  for (const o of ["https://localhost", "http://evil.example", "http://localhost.evil.example", "null", "http://localhost:8000/x"]) assert.ok(!originAllowed(o), o);
+  assert.ok(originAllowed("https://sandbox.example", ["https://sandbox.example"]));
+  for (const h of ["localhost", "localhost:8787", "127.0.0.1:8787", "[::1]:8787"]) assert.ok(hostAllowed(h), h);
+  for (const h of ["evil.example:8787", "localhost.evil.example", ""]) assert.ok(!hostAllowed(h), h);
+  assert.ok(hostAllowed("mars.local:8787", ["mars.local:8787"]));
+  const { llm, calls } = recorded([QUESTIONS, QUESTIONS, QUESTIONS]);
+  const server = createWorkshopServer({ llm, index, keys, build: fakeBuild, origins: ["https://sandbox.example"] });
+  await new Promise(r => server.listen(0, "127.0.0.1", r));
+  const port = server.address().port, base = `http://127.0.0.1:${port}`;
+  const body = JSON.stringify({ messages: [{ role: "user", content: "a dust gauge" }] });
+  try {
+    const post = (headers, b = body) => raw(port, "POST", "/workshop", { "content-type": "application/json", ...headers }, b);
+    let res = await post({ origin: "https://evil.example" }); assert.equal(res.status, 403); assert.match(res.json.error, /may not use the workshop/);
+    assert.equal(res.headers["access-control-allow-origin"], undefined);
+    res = await raw(port, "OPTIONS", "/workshop", { origin: "https://evil.example" }); assert.equal(res.status, 403);
+    res = await post({ origin: "https://evil.example", "content-type": "text/plain" }); assert.equal(res.status, 403, "a simple request without preflight is refused too");
+    res = await post({ host: `evil.example:${port}` }); assert.equal(res.status, 403); assert.match(res.json.error, /not served/);
+    res = await post({ "content-type": "text/plain" }); assert.equal(res.status, 415);
+    res = await raw(port, "POST", "/workshop", {}, body); assert.equal(res.status, 415, "no content type at all");
+    assert.equal(calls.length, 0, "the model was never called");
+    res = await post({ origin: "http://localhost:8000" }); assert.equal(res.status, 200);
+    assert.equal(res.headers["access-control-allow-origin"], "http://localhost:8000"); assert.equal(res.headers["vary"], "origin");
+    res = await post({ origin: "https://sandbox.example" }); assert.equal(res.status, 200); assert.equal(res.headers["access-control-allow-origin"], "https://sandbox.example");
+    res = await post({ "content-type": "application/json; charset=utf-8" }); assert.equal(res.status, 200, "a charset parameter is fine");
+    assert.equal(calls.length, 3);
+    res = await raw(port, "OPTIONS", "/workshop", { origin: "http://localhost:8000" }); assert.equal(res.status, 204); assert.equal(res.headers["access-control-allow-origin"], "http://localhost:8000");
+    res = await raw(port, "GET", "/health", { origin: "http://localhost:8000" }); assert.equal(res.status, 200); assert.equal(res.headers["access-control-allow-origin"], "http://localhost:8000");
+    const huge = JSON.stringify({ messages: [{ role: "user", content: "x".repeat(1_100_000) }] });
+    res = await post({}, huge);
+    assert.equal(res.status, 413); assert.match(res.json.error, /body over/);
+    assert.equal(calls.length, 3, "the oversize body never reached the model");
+  } finally { server.close(); }
+});
+
 test("HTTP: POST /workshop answers with questions or a module; bad requests are 400; health and 404", async () => {
   const { llm } = recorded([QUESTIONS, moduleReply(STATION_MANIFEST, STATION_SRC)]);
   const server = createWorkshopServer({ llm, index, keys, build: fakeBuild });
@@ -156,7 +237,7 @@ test("HTTP: POST /workshop answers with questions or a module; bad requests are 
   try {
     const post = (body, raw = false) => fetch(base + "/workshop", { method: "POST", headers: { "content-type": "application/json" }, body: raw ? body : JSON.stringify(body) });
     let res = await post({ messages: [{ role: "user", content: "a dust gauge" }] });
-    assert.equal(res.status, 200); assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    assert.equal(res.status, 200); assert.equal(res.headers.get("access-control-allow-origin"), null, "no Origin sent, no CORS header");
     let json = await res.json(); assert.equal(json.type, "questions"); assert.equal(json.text, QUESTIONS);
     res = await post({ messages: [{ role: "user", content: "a dust gauge" }, { role: "assistant", content: QUESTIONS }, { role: "user", content: "1.45 m" }] });
     json = await res.json(); assert.equal(res.status, 200); assert.equal(json.type, "module"); assert.equal(json.name, "weather_station"); assert.equal(json.report, "fake build");
@@ -165,30 +246,35 @@ test("HTTP: POST /workshop answers with questions or a module; bad requests are 
     res = await post({ messages: [] }); assert.equal(res.status, 400);
     res = await fetch(base + "/health"); assert.equal(res.status, 200); json = await res.json(); assert.equal(json.ok, true); assert.equal(json.facts, liveFactIds(index).length);
     res = await fetch(base + "/nope"); assert.equal(res.status, 404);
+    res = await post({ messages: [{ role: "user", content: "x" }] }); assert.equal(res.status, 500, "the recorded script is exhausted by now");
+    res = await fetch(base + "/workshop?x=1", { method: "GET" }); assert.equal(res.status, 405, "the query string is not part of the path");
     res = await fetch(base + "/workshop"); assert.equal(res.status, 405);
     res = await fetch(base + "/workshop", { method: "OPTIONS" }); assert.equal(res.status, 204);
     const failing = createWorkshopServer({ llm: async () => { throw new Error("script exhausted"); }, index, keys, build: fakeBuild });
     await new Promise(r => failing.listen(0, "127.0.0.1", r));
     try {
-      res = await fetch(`http://127.0.0.1:${failing.address().port}/workshop`, { method: "POST", body: JSON.stringify({ messages: [{ role: "user", content: "x" }] }) });
+      res = await fetch(`http://127.0.0.1:${failing.address().port}/workshop`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "x" }] }) });
       assert.equal(res.status, 500); assert.match((await res.json()).error, /script exhausted/);
     } finally { failing.close(); }
   } finally { server.close(); }
 });
 
 test("check:secrets: finds key shapes built at run time, passes on this repo, flags a tracked .env", () => {
-  const fake = ["sk-ant-" + "a".repeat(40), "AKIA" + "Q".repeat(16), "ghp_" + "z".repeat(36), "ANTHROPIC_API_KEY=" + "k".repeat(24), ["-----BEGIN", "RSA PRIVATE", "KEY-----"].join(" ")];   // every fixture is built at run time so the scanner does not flag this file
+  const fake = ["sk-ant-" + "a".repeat(40), "AKIA" + "Q".repeat(16), "ghp_" + "z".repeat(36), "ANTHROPIC_API_KEY=" + "k".repeat(24), ["-----BEGIN", "RSA PRIVATE", "KEY-----"].join(" "),
+    "sk-proj-" + "Ab_-".repeat(8), 'api_key = "' + "q".repeat(20) + '"', "openai_api_key: " + "w".repeat(32)];   // every fixture is built at run time so the scanner does not flag this file
   const hits = scanText(["const a = 1;", ...fake, "ANTHROPIC_API_KEY=", "WORKSHOP_MODEL="].join("\n"));
   assert.equal(hits.length, fake.length, JSON.stringify(hits));
-  assert.deepEqual(hits.map(h => h.line), [2, 3, 4, 5, 6]);
+  assert.deepEqual(hits.map(h => h.line), [2, 3, 4, 5, 6, 7, 8, 9]);
   assert.ok(hits.every(h => h.sample.length <= 15), "samples are truncated");
   const repo = scanRepo(new URL(".", root).pathname.replace(/\/$/, ""));
   assert.deepEqual(repo.findings, []); assert.ok(repo.files > 50);
   const dir = mkdtempSync(path.join(tmpdir(), "secrets-"));
-  execFileSync("git", ["init", "-q", dir]);
-  writeFileSync(path.join(dir, ".env"), "ANTHROPIC_API_KEY=\n"); writeFileSync(path.join(dir, "notes.md"), "token: " + fake[0] + "\n");
-  execFileSync("git", ["-C", dir, "add", ".env", "notes.md"]);
-  const bad = scanRepo(dir);
-  assert.ok(bad.findings.some(f => f.file === ".env" && /tracked/.test(f.what)));
-  assert.ok(bad.findings.some(f => f.file === "notes.md" && f.what === "Anthropic API key"));
+  try {
+    execFileSync("git", ["init", "-q", dir]);
+    writeFileSync(path.join(dir, ".env"), "ANTHROPIC_API_KEY=\n"); writeFileSync(path.join(dir, "notes.md"), "token: " + fake[0] + "\n");
+    execFileSync("git", ["-C", dir, "add", ".env", "notes.md"]);
+    const bad = scanRepo(dir);
+    assert.ok(bad.findings.some(f => f.file === ".env" && /tracked/.test(f.what)));
+    assert.ok(bad.findings.some(f => f.file === "notes.md" && f.what === "Anthropic API key"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

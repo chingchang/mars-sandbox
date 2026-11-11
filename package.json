@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "check:secrets": "node scripts/check_secrets.mjs"
   },
+  "engines": { "node": ">=22.18" },
   "keywords": [],
   "author": "",
   "license": "ISC",

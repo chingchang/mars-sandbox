@@ -2,18 +2,19 @@
 // or if .env itself is tracked. Runs in CI and in `npm test`.
 //   node scripts/check_secrets.mjs            # scan `git ls-files` in the repo
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const PATTERNS = [
   [/sk-ant-[A-Za-z0-9_-]{20,}/, "Anthropic API key"],
+  [/\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}/, "OpenAI project or service key"],
   [/\bsk-[A-Za-z0-9]{32,}\b/, "secret key (sk-...)"],
   [/\bAKIA[0-9A-Z]{16}\b/, "AWS access key id"],
   [/\bgh[pousr]_[A-Za-z0-9]{36,}\b/, "GitHub token"],
   [/\bxox[baprs]-[A-Za-z0-9-]{10,}/, "Slack token"],
   [/-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/, "private key block"],
-  [/\b[A-Z_]*(?:API_KEY|SECRET|TOKEN)\s*=\s*["']?[A-Za-z0-9_\-]{16,}/, "a key or token assigned a value in a file"],
+  [/\b[A-Za-z_]*(?:api_key|apikey|secret|token)\s*[=:]\s*["']?[A-Za-z0-9_\-]{16,}/i, "a key or token assigned a value in a file"],
 ];
 const SKIP_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".wasm", ".pdf", ".zip", ".gz", ".ico", ".woff", ".woff2", ".ttf", ".tif", ".tiff", ".img", ".lbl"]);
 const MAX_BYTES = 4 << 20;
@@ -50,7 +51,8 @@ export function scanRepo(root) {
   return { files: files.length, findings };
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+// Run as a script (resolved through symlinks, so a mismatch cannot look like a pass).
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const { files, findings } = scanRepo(root);
   if (findings.length) {

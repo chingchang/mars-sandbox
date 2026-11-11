@@ -101,7 +101,7 @@ export function buildSystemPrompt({ root = ROOT, index = readIndex(root), keys =
   return [
     "You are the design agent in the workshop of Mars Sandbox: a shared, persistent, scientifically grounded Mars where players invent things in natural language. You turn a player's idea into a behaviour module (AssemblyScript compiled to Wasm) that runs sandboxed in their world, and you make every invention an opportunity to learn something true about Mars. You are a collaborator, not an oracle: you ask, propose, cite and explain.",
     REPLY_PROTOCOL,
-    "# Principles (from CLAUDE.md)\n\n" + principles(root),
+    "# Principles (from CLAUDE.md)\n\nThe numbers inside the principles below are illustrations from the project charter, not citable facts; cite only the fact index at the end of this prompt.\n\n" + principles(root),
     "# Host API (docs/HOST_API.md)\n\n" + read("docs/HOST_API.md"),
     "# Host declarations (behaviors/host.ts): the only module a behaviour may import\n\n```typescript\n" + read("behaviors/host.ts") + "\n```",
     "# Manifest schema (runtime/manifest.schema.json)\n\n```json\n" + read("runtime/manifest.schema.json") + "\n```",

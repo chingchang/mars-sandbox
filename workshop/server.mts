@@ -2,7 +2,7 @@
 // far, get back questions for the player or a tested module. The API key
 // lives here and never reaches the browser. Run with `npm run workshop`.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { anthropicLlm, describeLlmError, DEFAULT_MODEL, type ChatMessage, type Llm } from "./llm.mts";
@@ -35,41 +35,66 @@ export function parseConversation(body: unknown): { messages: ChatMessage[]; tri
   return { messages: out, tries: n };
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+/** Body up to MAX_BODY_BYTES; past that the rest is drained and tooLarge is set, so the client gets an answer instead of a reset. */
+function readBody(req: IncomingMessage): Promise<{ text: string; tooLarge: boolean }> {
   return new Promise((resolve, reject) => {
-    let size = 0; const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => { size += c.length; if (size > MAX_BODY_BYTES) { reject(new BadRequest(`body over ${MAX_BODY_BYTES} bytes`)); req.destroy(); } else chunks.push(c); });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    let size = 0, tooLarge = false; const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => { size += c.length; if (size > MAX_BODY_BYTES) tooLarge = true; else chunks.push(c); });
+    req.on("end", () => resolve({ text: Buffer.concat(chunks).toString("utf8"), tooLarge }));
     req.on("error", reject);
   });
 }
 
-function send(res: ServerResponse, status: number, body: unknown) {
-  res.writeHead(status, { "content-type": "application/json", "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "POST, GET, OPTIONS" });
+/** Origins the page may call from without being listed: the local page on any port, http only. */
+export const LOCAL_ORIGIN = /^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
+/** Host header values this server answers to unless more are configured (DNS rebinding sends another name). */
+export const LOCAL_HOST = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
+
+export function originAllowed(origin: string, extra: string[] = []): boolean { return LOCAL_ORIGIN.test(origin) || extra.includes(origin); }
+export function hostAllowed(host: string, extra: string[] = []): boolean { return LOCAL_HOST.test(host) || extra.includes(host); }
+
+function send(res: ServerResponse, status: number, body: unknown, cors: Record<string, string> = {}) {
+  res.writeHead(status, { "content-type": "application/json", ...cors });
   res.end(JSON.stringify(body));
 }
 
-export type ServerOptions = { llm: Llm; model?: string } & Pick<WorkshopOptions, "index" | "keys" | "build">;
+export type ServerOptions = { llm: Llm; model?: string; origins?: string[]; hosts?: string[] } & Pick<WorkshopOptions, "index" | "keys" | "build">;
 
-/** Build the HTTP server; the caller listens. Tests pass a recorded llm and a fake build. */
-export function createWorkshopServer({ llm, model = DEFAULT_MODEL, index = readIndex(), keys = readKeys(), build }: ServerOptions) {
+/**
+ * Build the HTTP server; the caller listens. Tests pass a recorded llm and a fake build.
+ * Every request costs the owner's key, so what may call it is checked before anything else:
+ * the Host header must be local (or listed), a present Origin must be local (or listed), and
+ * POST /workshop must declare application/json; anything else is refused before the body is
+ * read or the model called. Requests with no Origin (curl, tests) pass the origin check.
+ */
+export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [], hosts = [], index = readIndex(), keys = readKeys(), build }: ServerOptions) {
   const system = buildSystemPrompt({ index, keys });            // assembled once; the files it reads are part of the commit
   const facts = liveFactIds(index).length;
   return createServer(async (req, res) => {
+    const host = req.headers.host ?? "";
+    if (!hostAllowed(host, hosts)) return send(res, 403, { error: `host "${host}" is not served; the workshop answers to localhost (WORKSHOP_HOSTS adds more)` });
+    const origin = req.headers.origin;
+    if (origin !== undefined && !originAllowed(origin, origins)) return send(res, 403, { error: `origin "${origin}" may not use the workshop; local pages only (WORKSHOP_ORIGINS adds more)` });
+    const cors: Record<string, string> = origin === undefined ? {} : { "access-control-allow-origin": origin, "vary": "origin", "access-control-allow-headers": "content-type", "access-control-allow-methods": "POST, GET, OPTIONS" };
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     try {
-      if (req.method === "OPTIONS") return send(res, 204, {});
-      if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: true, model, facts, system_bytes: system.length });
-      if (req.url !== "/workshop") return send(res, 404, { error: "not found; POST /workshop" });
-      if (req.method !== "POST") return send(res, 405, { error: "POST /workshop" });
+      if (req.method === "OPTIONS") return send(res, 204, {}, cors);
+      if (req.method === "GET" && pathname === "/health") return send(res, 200, { ok: true, model, facts, system_bytes: system.length }, cors);
+      if (pathname !== "/workshop") return send(res, 404, { error: "not found; POST /workshop" }, cors);
+      if (req.method !== "POST") return send(res, 405, { error: "POST /workshop" }, cors);
+      const type = (req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+      if (type !== "application/json") return send(res, 415, { error: "content-type must be application/json" }, cors);
+      const { text, tooLarge } = await readBody(req);
+      if (tooLarge) return send(res, 413, { error: `body over ${MAX_BODY_BYTES} bytes` }, { ...cors, connection: "close" });
       let body: unknown;
-      try { body = JSON.parse(await readBody(req)); } catch (e) { if (e instanceof BadRequest) throw e; throw new BadRequest("body is not valid JSON"); }
+      try { body = JSON.parse(text); } catch { throw new BadRequest("body is not valid JSON"); }
       const { messages, tries } = parseConversation(body);
       const result = await runWorkshop({ messages, tries, llm, index, keys, system, ...(build ? { build } : {}) });
-      return send(res, 200, result);
+      return send(res, 200, result, cors);
     } catch (e) {
-      if (e instanceof BadRequest) return send(res, 400, { error: e.message });
+      if (e instanceof BadRequest) return send(res, 400, { error: e.message }, cors);
       const { status, message } = describeLlmError(e);
-      return send(res, status, { error: message });
+      return send(res, status, { error: message }, cors);
     }
   });
 }
@@ -85,9 +110,10 @@ export function main() {
   let llm: Llm;
   try { llm = anthropicLlm({ model }); } catch (e) { console.error(`workshop: ${(e as Error).message}`); process.exit(2); }
   const port = Number(process.env.WORKSHOP_PORT) || DEFAULT_PORT;
-  createWorkshopServer({ llm, model }).listen(port, "127.0.0.1", () => {
+  const list = (v: string | undefined) => (v ?? "").split(",").map(x => x.trim()).filter(Boolean);
+  createWorkshopServer({ llm, model, origins: list(process.env.WORKSHOP_ORIGINS), hosts: list(process.env.WORKSHOP_HOSTS) }).listen(port, "127.0.0.1", () => {
     console.log(`workshop: POST http://127.0.0.1:${port}/workshop  (model ${model}; key from .env, never sent to the page)`);
   });
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) main();

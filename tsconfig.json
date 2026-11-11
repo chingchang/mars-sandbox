@@ -12,7 +12,8 @@
     "verbatimModuleSyntax": true,
     "allowJs": true,
     "checkJs": false,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": { "assemblyscript/asc": ["./workshop/types/asc.d.ts"] }
   },
-  "include": ["workshop/**/*.mts"]
+  "include": ["workshop/**/*.mts", "workshop/types/*.d.ts"]
 }

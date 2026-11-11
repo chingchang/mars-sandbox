@@ -24,6 +24,14 @@ export function parseReply(text: string): ParsedReply {
 
 export type Manifest = { name: string; fact_ids?: string[]; did_you_know?: { fact_id: string } } & Record<string, unknown>;
 
+/** Every module specifier in the source, whatever the statement: import x from "p", import "p", import("p"), export * from "p", export { a } from "p", require("p"), /// <reference path="p">. */
+export function moduleSpecifiers(source: string): string[] {
+  const out: string[] = [];
+  for (const m of source.matchAll(/\b(?:import|from|require)\s*\(?\s*["'`]([^"'`\n]*)["'`]/g)) out.push(m[1]);
+  for (const m of source.matchAll(/\/\/\/\s*<reference\s+path\s*=\s*["']([^"']*)["']/g)) out.push(m[1]);
+  return out;
+}
+
 /** Static checks before compiling: manifest shape, fact ids, imports. Returns problems for the model. */
 export function checkModule(reply: Extract<ParsedReply, { kind: "module" }>, index: FactIndex): { problems: string[]; manifest: Manifest | null } {
   const problems: string[] = [];
@@ -39,8 +47,8 @@ export function checkModule(reply: Extract<ParsedReply, { kind: "module" }>, ind
     }
   }
   if (!reply.source.trim()) problems.push("the source section is empty");
-  for (const imp of reply.source.matchAll(/^\s*import\b[^;]*?from\s*["']([^"']+)["']/gm)) {
-    if (imp[1] !== "./host") problems.push(`the module imports from "${imp[1]}"; only "./host" exists`);
+  for (const spec of new Set(moduleSpecifiers(reply.source))) {
+    if (spec !== "./host") problems.push(`the module refers to "${spec}"; the only module that exists is "./host"`);
   }
   if (!/export\s+function\s+init\s*\(/.test(reply.source) || !/export\s+function\s+tick\s*\(/.test(reply.source)) problems.push("the module must export init(): void and tick(dt: f32): void");
   return { problems, manifest };
