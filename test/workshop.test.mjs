@@ -16,7 +16,7 @@ import { createWorkshopServer, hostAllowed, originAllowed, parseConversation } f
 import { scanRepo, scanText } from "../scripts/check_secrets.mjs";
 import { validateManifest } from "../runtime/manifest.mjs";
 import { memoryPolicy } from "../runtime/wasm_limits.mjs";
-import { BUDGET_MS, MAX_MEMORY_PAGES, OVER_BUDGET_STRIKES, tickVerdict } from "../runtime/registry.mjs";
+import { BUDGET_MS, MAX_MEMORY_PAGES, OVER_BUDGET_STRIKES, WATCHDOG_MS, tickVerdict } from "../runtime/registry.mjs";
 import net from "node:net";
 
 const root = new URL("..", import.meta.url);
@@ -200,13 +200,19 @@ test("HTTP: a burst of requests is admitted up to the queue bound; the rest get 
   } finally { server.close(); }
 });
 
-const SLOW_SRC = 'import { state_set } from "./host";\nlet acc: f64 = 1.0;\nexport function init(): void {}\nexport function tick(dt: f32): void { for (let i = 0; i < 1000000; i++) { acc = acc * 1.0000001 + 0.5; } state_set(0, <f32>acc); }\n';   // about 5 ms per tick here
+const SLOW_SRC = 'import { state_set } from "./host";\nlet acc: f64 = 1.0;\nexport function init(): void {}\nexport function tick(dt: f32): void { for (let i = 0; i < 5000000; i++) { acc = acc * 1.0000001 + 0.5; } state_set(0, <f32>acc); }\n';   // about 20 ms per tick here; the smoke test stops at the third tick
+const LONG_TICK_SRC = 'import { state_set } from "./host";\nlet acc: f64 = 1.0; let n: i32 = 0;\nexport function init(): void {}\nexport function tick(dt: f32): void { n += 1; if (n == 5) { for (let i = 0; i < 300000000; i++) { acc = acc * 1.0000001 + 0.5; } } state_set(0, <f32>acc); }\n';   // fast every tick but one of about 1.3 s here: the world's watchdog kills it
 
-test("tick budget: the smoke test applies the runtime's rule; one paused tick passes, three in a row or a slow mean fail; a slow module is refused", async () => {
-  assert.equal(BUDGET_MS, 2); assert.equal(OVER_BUDGET_STRIKES, 3);
+test("tick budget: the smoke test applies the runtime's rules; one paused tick passes, a watchdog-length tick, three in a row or a slow mean fail; slow modules are refused", async () => {
+  assert.equal(BUDGET_MS, 2); assert.equal(OVER_BUDGET_STRIKES, 3); assert.equal(WATCHDOG_MS, 400);
   const quiet = Array(599).fill(0.5);
   const one = tickVerdict([...quiet.slice(0, 300), 6, ...quiet.slice(300)]);
   assert.equal(one.ok, true); assert.equal(one.worst, 6); assert.equal(one.over, 1); assert.equal(one.strikes, 1);
+  const killed = tickVerdict([...quiet.slice(0, 300), 500, ...quiet.slice(300)]);
+  assert.equal(killed.ok, false, "one tick over the watchdog is fatal even though the mean (1.33 ms) and the strikes (1) are fine");
+  assert.equal(killed.reason, "a tick took 500 ms; the world stops a module whose tick does not return within 400 ms");
+  assert.equal(tickVerdict([...quiet, 400]).ok, true, "exactly the watchdog is not over it (mean 1.17 ms)");
+  assert.match(tickVerdict([...quiet, 400.5]).reason, /^a tick took 401 ms/);
   const three = tickVerdict([...quiet.slice(0, 100), 2.1, 2.2, 2.3, ...quiet.slice(103)]);
   assert.equal(three.ok, false); assert.match(three.reason, /^3 ticks in a row over 2 ms/); assert.equal(three.over, 3);
   const spaced = tickVerdict([0.5, 2.1, 2.2, 0.5, 2.1, 2.2, 0.5]);
@@ -220,8 +226,14 @@ test("tick budget: the smoke test applies the runtime's rule; one paused tick pa
   // a module whose every tick is slow: the smoke test stops at the third strike (no hang), and the message names the rule
   const r = await compileAndTest(SLOW_SRC);
   assert.equal(r.ok, false); assert.match(r.error, /^TEST FAILURE:/); assert.match(r.error, /tick\(\) over budget: 3 ticks in a row over 2 ms \(worst [0-9.]+ ms\)/);
+  // one real module that is fast on every tick but one, which runs for more than the watchdog: refused at that tick with the rule named
+  const t0 = Date.now();
+  const long = await compileAndTest(LONG_TICK_SRC);
+  assert.equal(long.ok, false); assert.match(long.error, /^TEST FAILURE:/);
+  assert.match(long.error, /tick\(\) over budget: a tick took \d+ ms; the world stops a module whose tick does not return within 400 ms/);
+  assert.ok(Date.now() - t0 < 10000, "the smoke test stopped at the long tick instead of running all 600");
   const ok = await compileAndTest(STATION_SRC);
-  assert.ok(ok.ok); assert.match(ok.report, /^ok: 600 ticks, \d+ actuator calls, worst tick [0-9.]+ ms, \d+ over the 2 ms budget/);
+  assert.ok(ok.ok); assert.match(ok.report, /^ok: 600 ticks, \d+ actuator calls, worst tick [0-9.]+ ms, \d+ over the 2 ms budget \(3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail\)/);
 });
 
 test("HTTP: a second Host header is refused; a busy queue reached from outside the admission count is a 503", async () => {

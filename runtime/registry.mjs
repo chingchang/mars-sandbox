@@ -32,13 +32,15 @@ export const LOAD_TIMEOUT_MS = 3000;
 export const OVER_BUDGET_STRIKES = 3;  // consecutive over-budget ticks before the module is disabled
 
 /**
- * The budget rule as a pure function over a list of tick times (ms), for the smoke test and
- * anything else that judges a module offline. Same rule as tick() below: `strikes` consecutive
- * ticks over `budget` is a violation; so is a mean over `budget`. One slow tick is not: the
- * operating system pauses a thread now and then, and the world does not disable a module for it.
+ * The runtime's tick rules as a pure function over a list of tick times (ms), for the smoke test
+ * and anything else that judges a module offline. Same rules as the world enforces: a single tick
+ * over `watchdog` is a violation (the worker is terminated); `strikes` consecutive ticks over
+ * `budget` is a violation (the module is disabled); so is a mean over `budget`. One slow tick
+ * under the watchdog is not: the operating system pauses a thread now and then, and the world
+ * does not disable a module for it.
  * @returns {{ ok: boolean, reason: string | null, worst: number, over: number, mean: number, strikes: number }}
  */
-export function tickVerdict(times, budget = BUDGET_MS, strikes = OVER_BUDGET_STRIKES) {
+export function tickVerdict(times, budget = BUDGET_MS, strikes = OVER_BUDGET_STRIKES, watchdog = WATCHDOG_MS) {
   let worst = 0, over = 0, run = 0, longest = 0, sum = 0;
   for (const t of times) {
     sum += t; if (t > worst) worst = t;
@@ -46,7 +48,8 @@ export function tickVerdict(times, budget = BUDGET_MS, strikes = OVER_BUDGET_STR
   }
   const mean = times.length ? sum / times.length : 0;
   let reason = null;
-  if (longest >= strikes) reason = `${strikes} ticks in a row over ${budget} ms (worst ${worst.toFixed(2)} ms)`;
+  if (worst > watchdog) reason = `a tick took ${worst.toFixed(0)} ms; the world stops a module whose tick does not return within ${watchdog} ms`;
+  else if (longest >= strikes) reason = `${strikes} ticks in a row over ${budget} ms (worst ${worst.toFixed(2)} ms)`;
   else if (mean > budget) reason = `mean tick ${mean.toFixed(2)} ms, budget is ${budget} ms`;
   return { ok: reason === null, reason, worst, over, mean, strikes: longest };
 }

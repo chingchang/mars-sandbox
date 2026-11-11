@@ -1,11 +1,12 @@
 // Generic smoke test for any behavior: illegal imports, traps, hangs, the tick budget,
 // and "does it ever call an actuator". Used by the workshop server (and generate.py)
 // before a module is accepted. The budget is judged by the runtime's own rule
-// (tickVerdict in runtime/registry.mjs): OVER_BUDGET_STRIKES consecutive ticks over
-// BUDGET_MS, or a mean over BUDGET_MS, is a violation; one slow tick is not.
+// (tickVerdict in runtime/registry.mjs): a single tick over WATCHDOG_MS, OVER_BUDGET_STRIKES
+// consecutive ticks over BUDGET_MS, or a mean over BUDGET_MS, is a violation; one slow tick
+// under the watchdog is not.
 import { readFileSync } from "node:fs";
 import { Worker } from "node:worker_threads";
-import { BUDGET_MS, OVER_BUDGET_STRIKES, tickVerdict } from "../runtime/registry.mjs";
+import { BUDGET_MS, OVER_BUDGET_STRIKES, WATCHDOG_MS, tickVerdict } from "../runtime/registry.mjs";
 
 const name = process.argv[2];                       // a sample name (build/<name>.wasm) or a path to a .wasm file (the workshop server)
 const bytes = readFileSync(name.endsWith(".wasm") ? name : new URL(`../build/${name}.wasm`, import.meta.url));
@@ -36,7 +37,7 @@ const code = `
     for (let i=0;i<600;i++) {
       const a=performance.now(); instance.exports.tick(0.05); const ms=performance.now()-a; times.push(ms); t+=0.05;
       run = ms > ${BUDGET_MS} ? run + 1 : 0;
-      if (run >= ${OVER_BUDGET_STRIKES}) break;                       // the world would have disabled it here; no need to run on
+      if (ms > ${WATCHDOG_MS} || run >= ${OVER_BUDGET_STRIKES}) break;   // the world would have killed or disabled it here; no need to run on
     }
   } catch (e) { parentPort.postMessage({ err: "trap: " + e.message }); process.exit(0); }
   parentPort.postMessage({ drives, times });
@@ -47,4 +48,4 @@ if (res.err) { console.log(res.err); process.exit(1); }
 const v = tickVerdict(res.times);
 if (!v.ok) { console.log(`tick() over budget: ${v.reason}`); process.exit(1); }
 if (res.drives === 0) { console.log("module never called any actuator (drive, spawn, pose, state_set, signal_emit); probably not doing anything"); process.exit(1); }
-console.log(`ok: ${res.times.length} ticks, ${res.drives} actuator calls, worst tick ${v.worst.toFixed(3)} ms, ${v.over} over the ${BUDGET_MS} ms budget (${OVER_BUDGET_STRIKES} in a row or a mean over it would fail)`);
+console.log(`ok: ${res.times.length} ticks, ${res.drives} actuator calls, worst tick ${v.worst.toFixed(3)} ms, ${v.over} over the ${BUDGET_MS} ms budget (${OVER_BUDGET_STRIKES} in a row, a mean over it, or one tick over the ${WATCHDOG_MS} ms watchdog would fail)`);
