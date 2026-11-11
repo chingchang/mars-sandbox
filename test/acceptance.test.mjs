@@ -191,7 +191,7 @@ test("judge: a good transcript passes with evidence; failed or over-tries transc
     await tamper("three-tries", x => { x.tries = 3; x.log = [x.log[0], x.log[0], x.log[0]]; }, "fail", /3 tries/);
     await tamper("tries-vs-log", x => { x.log = [x.log[0], x.log[0], x.log[0]]; }, "inconsistent", /tries is 1 but the log holds 3/);
     await tamper("other-prompt", x => { x.turns[0].request_messages[0].content = "A beacon, please."; }, "inconsistent", /first message is not the acceptance prompt/);
-    const groups = summarize([{ system_sha256: "a", verdict: "pass", prompt_number: 1 }, { system_sha256: "a", verdict: "fail", prompt_number: 2 }, { system_sha256: "b", verdict: "reviewer", prompt_number: 1 }]);
-    assert.deepEqual(groups, [{ hash: "a", total: 2, pass: 1, reviewer: 0, prompts: [1, 2] }, { hash: "b", total: 1, pass: 0, reviewer: 1, prompts: [1] }]);
+    const groups = summarize([{ system_sha256: "a", git_head: "h1", verdict: "pass", prompt_number: 1 }, { system_sha256: "a", git_head: "h1", verdict: "fail", prompt_number: 2 }, { system_sha256: "a", git_head: "h2", verdict: "pass", prompt_number: 1 }, { system_sha256: "b", verdict: "reviewer", prompt_number: 1 }]);
+    assert.deepEqual(groups, [{ hash: "a", git_head: "h1", total: 2, pass: 1, reviewer: 0, prompts: [1, 2] }, { hash: "a", git_head: "h2", total: 1, pass: 1, reviewer: 0, prompts: [1] }, { hash: "b", git_head: "(no head)", total: 1, pass: 0, reviewer: 1, prompts: [1] }]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

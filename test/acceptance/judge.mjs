@@ -35,7 +35,7 @@ export function questionsBeforeBuild(t) {
 /** @returns {{ file, prompt_number, result, verdict: "pass"|"fail"|"inconsistent"|"reviewer", why, ... }} */
 export async function judgeTranscript(file) {
   const t = JSON.parse(readFileSync(file, "utf8"));
-  const out = { file: path.basename(file), prompt_number: t.prompt_number, result: t.result ?? "(none)", tries: t.tries ?? null, system_sha256: t.system_sha256 };
+  const out = { file: path.basename(file), prompt_number: t.prompt_number, result: t.result ?? "(none)", tries: t.tries ?? null, system_sha256: t.system_sha256, git_head: t.git_head ?? null };
   const qs = questionsBeforeBuild(t);
   out.question_fact_ids = [...new Set(qs.flatMap(questionFactIds))];
   out.question_other_ids = [...new Set(qs.flatMap(otherFactIds))];
@@ -75,11 +75,11 @@ export async function judgeAll(dir = TRANSCRIPT_DIR) {
   return results;
 }
 
-/** Results grouped by system prompt hash, each group counted on its own. */
+/** Results grouped by system prompt hash and git head, each group counted on its own, so a set run on one commit gets its own line. */
 export function summarize(results) {
   const groups = new Map();
-  for (const r of results) { const k = r.system_sha256 ?? "(no hash)"; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
-  return [...groups.entries()].map(([hash, rs]) => ({ hash, total: rs.length, pass: rs.filter(r => r.verdict === "pass").length, reviewer: rs.filter(r => r.verdict === "reviewer").length, prompts: [...new Set(rs.map(r => r.prompt_number))].sort() }));
+  for (const r of results) { const k = `${r.system_sha256 ?? "(no hash)"}@${r.git_head ?? "(no head)"}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  return [...groups.entries()].map(([k, rs]) => ({ hash: rs[0].system_sha256 ?? "(no hash)", git_head: rs[0].git_head ?? "(no head)", total: rs.length, pass: rs.filter(r => r.verdict === "pass").length, reviewer: rs.filter(r => r.verdict === "reviewer").length, prompts: [...new Set(rs.map(r => r.prompt_number))].sort() }));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
@@ -93,7 +93,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
     console.log(`  verdict: ${r.verdict.toUpperCase()} (${r.why})`);
   }
   const groups = summarize(results);
-  for (const g of groups) console.log(`\nsystem prompt ${g.hash.slice(0, 12)}: ${g.pass} of ${g.total} pass${g.reviewer ? `, ${g.reviewer} for the reviewer` : ""} (prompts ${g.prompts.join(", ")})`);
-  if (groups.length > 1) console.log(`${groups.length} different system prompts in the folder: only one set counts as the final run`);
+  for (const g of groups) console.log(`\nsystem prompt ${g.hash.slice(0, 12)} at git ${g.git_head.slice(0, 7)}: ${g.pass} of ${g.total} pass${g.reviewer ? `, ${g.reviewer} for the reviewer` : ""} (prompts ${g.prompts.join(", ")})`);
+  if (groups.length > 1) console.log(`${groups.length} different prompt-and-commit sets in the folder: only one counts as the final run`);
   process.exit(0);
 }
