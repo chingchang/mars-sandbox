@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { buildSystemPrompt, factKeyName, factLines, liveFactIds, principles, readIndex, readKeys, REPLY_PROTOCOL } from "../workshop/prompt.mts";
 import { checkModule, MARKERS, moduleSpecifiers, parseReply, runWorkshop, slug, stripComments } from "../workshop/pipeline.mts";
-import { compileAndTest, compileSource } from "../workshop/compile.mts";
+import { BuildQueue, BusyError, compileAndTest, compileSource } from "../workshop/compile.mts";
 import { createWorkshopServer, hostAllowed, originAllowed, parseConversation } from "../workshop/server.mts";
 import { scanRepo, scanText } from "../scripts/check_secrets.mjs";
 import { validateManifest } from "../runtime/manifest.mjs";
@@ -140,18 +140,63 @@ const DEEP_SRC = 'import { state_set } from "./host";\nexport function init(): v
 
 test("compiler limits: a source that freezes, crashes or overflows the compiler is a compiler error, and other compiles go on meanwhile", async () => {
   const t0 = Date.now();
-  // compileSource, not compileAndTest: the point is that the compiler is not blocked; the smoke test's 2 ms tick budget is a separate, load-sensitive check
-  const [frozen, station] = await Promise.all([compileAndTest(FREEZE_SRC, undefined, { timeoutMs: 3000 }), compileSource(STATION_SRC)]);
+  // the station is built (compile and smoke test) while the frozen compile is in flight: the queue runs it after, so the 2 ms budget is measured alone
+  const [frozen, station] = await Promise.all([compileAndTest(FREEZE_SRC, undefined, { timeoutMs: 3000 }), compileAndTest(STATION_SRC)]);
   const took = Date.now() - t0;
   assert.equal(frozen.ok, false); assert.match(frozen.error, /^COMPILER ERROR:/); assert.match(frozen.error, /did not finish within 3 s/);
-  assert.ok(took >= 2900 && took < 15000, `the freeze was cut at the limit (${took} ms)`);
-  assert.ok(station.ok, `a compile started beside the frozen one finished normally: ${station.ok ? "" : station.error}`);
+  assert.ok(took >= 2900 && took < 20000, `the freeze was cut at the limit (${took} ms)`);
+  assert.ok(station.ok, `a build requested beside the frozen compile came back ok: ${station.ok ? "" : station.error}`);
   const crashed = await compileAndTest(manyCalls(10000));
   assert.equal(crashed.ok, false); assert.match(crashed.error, /^COMPILER ERROR:/); assert.match(crashed.error, /crashed and stopped|crashed:|ran out of memory/);
   const deep = await compileAndTest(DEEP_SRC);
   assert.equal(deep.ok, false); assert.match(deep.error, /^COMPILER ERROR:/); assert.match(deep.error, /the compiler threw: Maximum call stack size exceeded/);
   const c = await compileSource(STATION_SRC);
   assert.ok(c.ok && Buffer.compare(Buffer.from(c.wasm), readFileSync(new URL("build/weather_station.wasm", root))) === 0, "the compiler still matches build.sh afterwards");
+});
+
+test("build queue: one build at a time, bounded waiting, and ten station builds requested during a frozen compile all come back ok", async () => {
+  const q = new BuildQueue(1);
+  let running = 0, worst = 0;
+  const job = ms => () => new Promise(r => { running++; worst = Math.max(worst, running); setTimeout(() => { running--; r(ms); }, ms); });
+  const a = q.run(job(60)), b = q.run(job(10));
+  assert.equal(q.inFlight, 2); assert.equal(q.hasRoom, false);
+  await assert.rejects(q.run(job(1)), BusyError, "one running plus one waiting is the bound");
+  assert.deepEqual(await Promise.all([a, b]), [60, 10]); assert.equal(worst, 1, "never two at once"); assert.equal(q.inFlight, 0);
+  const q2 = new BuildQueue(1); await assert.rejects(q2.run(async () => { throw new Error("boom"); }), /boom/); assert.equal(q2.inFlight, 0, "a failed build releases the slot");
+  assert.ok((await q2.run(async () => 7)) === 7, "and the queue goes on");
+  // ten builds requested while a frozen compile holds the queue: every one is built after it and passes the 2 ms budget
+  const wide = new BuildQueue(20);
+  const t0 = Date.now();
+  const frozen = compileAndTest(FREEZE_SRC, undefined, { timeoutMs: 2000 }, wide);
+  const stations = await Promise.all(Array.from({ length: 10 }, () => compileAndTest(STATION_SRC, undefined, {}, wide)));
+  const f = await frozen;
+  assert.equal(f.ok, false); assert.match(f.error, /did not finish within 2 s/);
+  stations.forEach((s, i) => assert.ok(s.ok, `round ${i + 1}: ${s.ok ? "" : s.error}`));
+  assert.ok(stations.every(s => /ok: 600 ticks/.test(s.report)));
+  assert.ok(Date.now() - t0 >= 2000, "they waited for the frozen compile instead of sharing its CPU");
+});
+
+test("HTTP: a burst of requests is admitted up to the queue bound; the rest get 503 before the model is called; /health answers meanwhile", async () => {
+  const q = new BuildQueue(4);
+  const { llm, calls } = recorded(Array.from({ length: 12 }, () => moduleReply(STATION_MANIFEST, STATION_SRC)));
+  const server = createWorkshopServer({ llm, index, keys, queue: q });                  // real builds, through the queue
+  await new Promise(r => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const post = () => fetch(base + "/workshop", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "weather station" }], tries: 1 }) });
+    const burst = Array.from({ length: 12 }, post);
+    await new Promise(r => setTimeout(r, 300));
+    const h0 = Date.now(); const health = await fetch(base + "/health"); const hj = await health.json();
+    assert.equal(health.status, 200); assert.ok(Date.now() - h0 < 2000, "/health answered while the queue was full"); assert.equal(hj.in_flight, 5);
+    const results = await Promise.all((await Promise.all(burst)).map(async r => ({ status: r.status, json: await r.json() })));
+    const built = results.filter(r => r.status === 200), busy = results.filter(r => r.status === 503);
+    assert.equal(built.length, 5, "one running plus four waiting are admitted"); assert.equal(busy.length, 7);
+    assert.ok(built.every(r => r.json.type === "module"), "none failed: " + built.map(r => r.json.type + ":" + (r.json.error ?? "")).join(", "));
+    assert.ok(busy.every(r => /busy/.test(r.json.error)));
+    assert.equal(calls.length, 5, "the model was called only for admitted requests");
+    assert.equal(q.inFlight, 0);
+    const after = await post(); assert.equal(after.status, 200, "room again once the burst is done"); assert.equal((await after.json()).type, "module");
+  } finally { server.close(); }
 });
 
 test("HTTP: the server answers /health while a compile is frozen, and the request gets a normal failed answer", async () => {
@@ -306,10 +351,11 @@ test("HTTP: POST /workshop answers with questions or a module; bad requests are 
 
 test("check:secrets: finds key shapes built at run time, passes on this repo, flags a tracked .env", () => {
   const fake = ["sk-ant-" + "a".repeat(40), "AKIA" + "Q".repeat(16), "ghp_" + "z".repeat(36), "ANTHROPIC_API_KEY=" + "k".repeat(24), ["-----BEGIN", "RSA PRIVATE", "KEY-----"].join(" "),
-    "sk-proj-" + "Ab_-".repeat(8), 'api_key = "' + "q".repeat(20) + '"', "openai_api_key: " + "w".repeat(32)];   // every fixture is built at run time so the scanner does not flag this file
+    "sk-proj-" + "Ab_-".repeat(8), 'api_key = "' + "q".repeat(20) + '"', "openai_api_key: " + "w".repeat(32),
+    'apiKey: "' + "r".repeat(30) + '", // prod', '{ apiKey: "' + "s".repeat(30) + '", model }', 'token = "' + "u".repeat(30) + '" + suffix'];   // every fixture is built at run time so the scanner does not flag this file
   const hits = scanText(["const a = 1;", ...fake, "ANTHROPIC_API_KEY=", "WORKSHOP_MODEL=", "const token = readTokenFromEnvironment();", "apiKey = process.env.ANTHROPIC_API_KEY,"].join("\n"));
   assert.equal(hits.length, fake.length, JSON.stringify(hits));
-  assert.deepEqual(hits.map(h => h.line), [2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(hits.map(h => h.line), [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   assert.ok(hits.every(h => h.sample.length <= 15), "samples are truncated");
   const repo = scanRepo(new URL(".", root).pathname.replace(/\/$/, ""));
   assert.deepEqual(repo.findings, []); assert.ok(repo.files > 50);

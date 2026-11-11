@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { anthropicLlm, describeLlmError, DEFAULT_MODEL, type ChatMessage, type Llm } from "./llm.mts";
 import { DEFAULT_TRIES, runWorkshop, type WorkshopOptions } from "./pipeline.mts";
 import { buildSystemPrompt, liveFactIds, readIndex, readKeys, ROOT } from "./prompt.mts";
+import { buildQueue, compileAndTest, type BuildQueue } from "./compile.mts";
 
 export const DEFAULT_PORT = 8787;
 export const MAX_BODY_BYTES = 1 << 20, MAX_MESSAGES = 40, MAX_TRIES = 5;
@@ -58,7 +59,7 @@ function send(res: ServerResponse, status: number, body: unknown, cors: Record<s
   res.end(JSON.stringify(body));
 }
 
-export type ServerOptions = { llm: Llm; model?: string; origins?: string[]; hosts?: string[] } & Pick<WorkshopOptions, "index" | "keys" | "build">;
+export type ServerOptions = { llm: Llm; model?: string; origins?: string[]; hosts?: string[]; queue?: BuildQueue } & Pick<WorkshopOptions, "index" | "keys" | "build">;
 
 /**
  * Build the HTTP server; the caller listens. Tests pass a recorded llm and a fake build.
@@ -66,10 +67,15 @@ export type ServerOptions = { llm: Llm; model?: string; origins?: string[]; host
  * the Host header must be local (or listed), a present Origin must be local (or listed), and
  * POST /workshop must declare application/json; anything else is refused before the body is
  * read or the model called. Requests with no Origin (curl, tests) pass the origin check.
+ * Builds run one at a time (see compile.mts): a request is admitted only while the queue has
+ * room for its build (one running plus four waiting); beyond that it gets 503 without the
+ * model being called, and /health keeps answering throughout.
  */
-export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [], hosts = [], index = readIndex(), keys = readKeys(), build }: ServerOptions) {
+export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [], hosts = [], index = readIndex(), keys = readKeys(), build, queue = buildQueue }: ServerOptions) {
   const system = buildSystemPrompt({ index, keys });            // assembled once; the files it reads are part of the commit
   const facts = liveFactIds(index).length;
+  let admitted = 0;                                              // requests in flight; each holds at most one build at a time
+  const doBuild = build ?? ((src: string) => compileAndTest(src, ROOT, {}, queue));   // compileAndTest queues itself; a custom build is the caller's business
   return createServer(async (req, res) => {
     const host = req.headers.host ?? "";
     if (!hostAllowed(host, hosts)) return send(res, 403, { error: `host "${host}" is not served; the workshop answers to localhost (WORKSHOP_HOSTS adds more)` });
@@ -79,7 +85,7 @@ export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [],
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     try {
       if (req.method === "OPTIONS") return send(res, 204, {}, cors);
-      if (req.method === "GET" && pathname === "/health") return send(res, 200, { ok: true, model, facts, system_bytes: system.length }, cors);
+      if (req.method === "GET" && pathname === "/health") return send(res, 200, { ok: true, model, facts, system_bytes: system.length, in_flight: admitted, building: queue.running }, cors);
       if (pathname !== "/workshop") return send(res, 404, { error: "not found; POST /workshop" }, cors);
       if (req.method !== "POST") return send(res, 405, { error: "POST /workshop" }, cors);
       const type = (req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
@@ -89,8 +95,12 @@ export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [],
       let body: unknown;
       try { body = JSON.parse(text); } catch { throw new BadRequest("body is not valid JSON"); }
       const { messages, tries } = parseConversation(body);
-      const result = await runWorkshop({ messages, tries, llm, index, keys, system, ...(build ? { build } : {}) });
-      return send(res, 200, result, cors);
+      if (admitted >= 1 + queue.maxWaiting) return send(res, 503, { error: "the workshop is busy, try again in a moment" }, { ...cors, "retry-after": "5" });
+      admitted++;
+      try {
+        const result = await runWorkshop({ messages, tries, llm, index, keys, system, build: doBuild });
+        return send(res, 200, result, cors);
+      } finally { admitted--; }
     } catch (e) {
       if (e instanceof BadRequest) return send(res, 400, { error: e.message }, cors);
       const { status, message } = describeLlmError(e);
