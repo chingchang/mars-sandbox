@@ -7,14 +7,16 @@ export type Llm = (system: string, messages: ChatMessage[]) => Promise<string>;
 
 export const DEFAULT_MODEL = "claude-opus-5-5";
 
-export function anthropicLlm({ apiKey = process.env.ANTHROPIC_API_KEY, model = process.env.WORKSHOP_MODEL || DEFAULT_MODEL, timeoutMs = 180_000 }:
+/** Output room for one reply: the model's thinking counts against it, and a full module with its explanation after a long think overran 16000 in the A1 runs. */
+export const MAX_OUTPUT_TOKENS = 32_000;
+export function anthropicLlm({ apiKey = process.env.ANTHROPIC_API_KEY, model = process.env.WORKSHOP_MODEL || DEFAULT_MODEL, timeoutMs = 600_000 }:
   { apiKey?: string; model?: string; timeoutMs?: number } = {}): Llm {
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set: copy .env.example to .env and fill it in");
   const client = new Anthropic({ apiKey, timeout: timeoutMs, maxRetries: 2 });
   return async (system, messages) => {
     const res = await client.beta.messages.create({
       model,
-      max_tokens: 16000,
+      max_tokens: MAX_OUTPUT_TOKENS,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       // the system prompt is the same for every request until a shared file changes: cache it
