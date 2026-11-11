@@ -7,6 +7,21 @@ import { validateManifest } from "../runtime/manifest.mjs";   // pack.mjs rewrit
 
 export const DEFAULT_WORKSHOP_URL = "http://127.0.0.1:8787";
 export const MAX_RETRIES_WHEN_BUSY = 6;
+const LOCAL_PAGE = /^(?:localhost|127\.0\.0\.1|\[::1\])$/;
+
+/**
+ * Where the page finds the workshop server, in order: ?workshop= in the page's URL, the URL
+ * packed into the page (WORKSHOP_URL at pack time, for a server on another host), the local
+ * server when the page itself is local (development, unchanged), else the page's own origin
+ * (production: one process serves the page and the workshop).
+ */
+export function resolveWorkshopUrl({ search = "", packed = "", origin = "", hostname = "" } = {}) {
+  const param = new URLSearchParams(search).get("workshop");
+  if (param) return param;
+  if (packed && packed.trim() && packed.trim() !== "__WORKSHOP_URL__") return packed.trim();
+  if (LOCAL_PAGE.test(hostname) || !origin || origin === "null") return DEFAULT_WORKSHOP_URL;
+  return origin;
+}
 
 /** The weakest provenance tier among fact ids, by the index's tier order (strongest first); null when none resolve. */
 export function weakestTier(index, factIds) {
@@ -50,20 +65,35 @@ export function nextStepFor(outcome) {
   if (kind === "unreachable") return { title: `The workshop server is not reachable at ${outcome.url}.`,
     detail: "Start it with `npm run workshop` in the project folder, and open this page from http://localhost:8000 (a page opened as a file cannot reach it).", question: "Once it is running, send your message again.", retry: false };
   if (kind === "refused") return { title: "The workshop would not take that request.", detail: outcome.message ?? "", question: "Try a shorter message, or reload the page from http://localhost:8000.", retry: false };
+  if (kind === "unauthorized") return { title: outcome.hadCode ? "That access code was not accepted." : "This workshop asks for an access code.",
+    detail: outcome.hadCode ? "The code may have changed; ask the owner for the current one." : "The owner sets it so that only invited players spend the workshop's budget.", question: "Type the code below: it is kept on this device, and your message goes out as soon as it is accepted.", askCode: true, retry: false };
+  if (kind === "throttled") return { title: "Too many wrong access codes from this device.", detail: `The workshop will take another code in ${outcome.retryAfter} s.`, question: "Check the code with the owner, then try again; your message is back in the box.", retry: false };
+  if (kind === "closed") return { title: "The workshop is closed for today.", detail: outcome.message ?? "Its model calls for the day are used up.", question: "Your message is back in the box: send it again when it reopens. Meanwhile the samples still load, and anything already built keeps running.", retry: false };
   return { title: "Something went wrong talking to the workshop.", detail: outcome.message ?? "", question: "Try sending your message again.", retry: false };
 }
 
-/** The HTTP call. Returns { kind: "questions" | "module" | "failed" | "busy" | "declined" | "refused" | "unreachable" | "error", ... }. */
-export async function askWorkshop(url, messages, { fetchImpl = fetch, tries } = {}) {
+/**
+ * The HTTP call. Returns { kind: "questions" | "module" | "failed" | "busy" | "declined" | "refused" | "unauthorized" |
+ * "throttled" | "closed" | "unreachable" | "error", ... }. `accessCode` goes as a bearer token when set. A server in
+ * keepalive mode answers 200 with leading whitespace and may carry another outcome as { type: "error", status };
+ * that is read as if it had been the status.
+ */
+export async function askWorkshop(url, messages, { fetchImpl = fetch, tries, accessCode } = {}) {
   let res;
   try {
-    res = await fetchImpl(url.replace(/\/$/, "") + "/workshop", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages, ...(tries ? { tries } : {}) }) });
+    res = await fetchImpl(url.replace(/\/$/, "") + "/workshop", { method: "POST", headers: { "content-type": "application/json", ...(accessCode ? { authorization: `Bearer ${accessCode}` } : {}) }, body: JSON.stringify({ messages, ...(tries ? { tries } : {}) }) });
   } catch (e) { return { kind: "unreachable", url, message: String(e?.message ?? e) }; }
   let body = null; try { body = await res.json(); } catch {}
-  if (res.status === 503) return { kind: "busy", retryAfter: Math.max(1, Math.min(60, Number(res.headers.get("retry-after")) || 5)), message: body?.error };
-  if (res.status === 422) return { kind: "declined", message: body?.error };
-  if (res.status === 400 || res.status === 403 || res.status === 413 || res.status === 415) return { kind: "refused", message: body?.error ?? `status ${res.status}` };
-  if (!res.ok || !body) return { kind: "error", message: body?.error ?? `status ${res.status}` };
+  let status = res.status, retryAfter = Number(res.headers.get("retry-after"));
+  if (status === 200 && body?.type === "error" && Number.isInteger(body.status) && body.status >= 400 && body.status <= 599) { status = body.status; retryAfter = Number(body.retry_after) || retryAfter; }
+  const ok = status >= 200 && status < 300;
+  if (status === 503) return { kind: "busy", retryAfter: Math.max(1, Math.min(60, retryAfter || 5)), message: body?.error };
+  if (status === 422) return { kind: "declined", message: body?.error };
+  if (status === 401) return { kind: "unauthorized", hadCode: Boolean(accessCode), message: body?.error };
+  if (status === 429 && body?.code === "closed") return { kind: "closed", message: body?.error, reopensAt: typeof body.reopens_at === "string" ? body.reopens_at : null };
+  if (status === 429) return { kind: "throttled", retryAfter: Math.max(1, retryAfter || 60), message: body?.error };
+  if (status === 400 || status === 403 || status === 413 || status === 415) return { kind: "refused", message: body?.error ?? `status ${status}` };
+  if (!ok || !body) return { kind: "error", message: body?.error ?? `status ${status}` };
   if (body.type === "questions" && typeof body.text === "string") return { kind: "questions", text: body.text };
   if (body.type === "module") {
     const bad = moduleAnswerProblem(body);
@@ -101,10 +131,14 @@ export function proseHtml(index, text) {
  * The panel. `els`: { input, send, thread, status, proposal }. `place(result)` loads the module into
  * the world and resolves to the object id; `onInspect(id)` opens the inspector.
  */
-export function createWorkshopPanel({ els, index, workshopUrl = DEFAULT_WORKSHOP_URL, place, log = () => {}, fetchImpl = fetch, sleep = ms => new Promise(r => setTimeout(r, ms)) }) {
+export function createWorkshopPanel({ els, index, workshopUrl = DEFAULT_WORKSHOP_URL, place, log = () => {}, fetchImpl = fetch, sleep = ms => new Promise(r => setTimeout(r, ms)), storage = defaultStorage() }) {
   const messages = [];          // the conversation as sent to the server
   let busy = false, proposal = null, retries = 0;
   const E = els;
+  // the access code, kept per workshop URL on this device (never in the conversation, never logged)
+  const codeKey = () => `mars-sandbox.workshop-code:${workshopUrl}`;
+  const getCode = () => { try { return storage.getItem(codeKey()) || null; } catch { return null; } };
+  const setCode = v => { try { v ? storage.setItem(codeKey(), v) : storage.removeItem(codeKey()); } catch {} };
 
   function addTurn(role, html, cls = "") {
     const d = document.createElement("div"); d.className = `turn ${role} ${cls}`.trim(); d.innerHTML = html; E.thread.appendChild(d); E.thread.scrollTop = E.thread.scrollHeight; return d;
@@ -162,7 +196,7 @@ export function createWorkshopPanel({ els, index, workshopUrl = DEFAULT_WORKSHOP
     setStatus("Asking the design agent… (it may ask you something first; a build is compiled and tested before you see it)", "loading");
     let r;
     for (;;) {
-      r = await askWorkshop(workshopUrl, messages, { fetchImpl });
+      r = await askWorkshop(workshopUrl, messages, { fetchImpl, accessCode: getCode() });
       if (r.kind !== "busy") break;
       if (retries >= MAX_RETRIES_WHEN_BUSY) { r = { ...r, exhausted: true, attempts: retries + 1 }; break; }
       retries++;
@@ -170,9 +204,20 @@ export function createWorkshopPanel({ els, index, workshopUrl = DEFAULT_WORKSHOP
       await sleep(r.retryAfter * 1000);
     }
     setBusy(false);
-    if (r.kind === "busy" || r.kind === "unreachable" || r.kind === "refused" || r.kind === "error") {
+    if (r.kind === "busy" || r.kind === "unreachable" || r.kind === "refused" || r.kind === "error" || r.kind === "unauthorized" || r.kind === "throttled" || r.kind === "closed") {
       messages.pop();                                          // undelivered: the model never saw it, so it must not be sent twice
       E.input.value = text;                                    // and the player gets it back to send again
+    }
+    if (r.kind === "unauthorized") {
+      if (r.hadCode) setCode(null);                            // a stored code the server no longer takes is forgotten
+      const step = nextStepFor(r);
+      setStatus("", "");
+      const turn = addTurn("agent", `<b>${esc(step.title)}</b> ${esc(step.detail)}<br><span class="q">${esc(step.question)}</span><div class="row"><input id="ws-code" type="password" autocomplete="off" placeholder="access code" aria-label="access code"><button class="primary" id="ws-code-ok">Use this code</button></div>`, "next askcode");
+      const input = turn.querySelector("#ws-code"), ok = turn.querySelector("#ws-code-ok");
+      const submit = () => { const v = input.value.trim(); if (!v) return; setCode(v); input.value = ""; turn.remove(); send(text); };   // the code is sent only in the header; the message goes again as it was
+      ok.onclick = submit; input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+      input.focus();
+      return;
     }
     if (r.kind === "questions") {
       messages.push({ role: "assistant", content: r.text });
@@ -197,8 +242,16 @@ export function createWorkshopPanel({ els, index, workshopUrl = DEFAULT_WORKSHOP
   E.input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
   /** Forget the conversation and the thread (a new design). */
   function reset() { messages.length = 0; proposal = null; E.thread.innerHTML = ""; E.proposal.hidden = true; E.input.value = ""; setStatus("", ""); setBusy(false); }
-  return { send, messages, get busy() { return busy; }, get proposal() { return proposal; }, placeProposal, reset,
+  /** Forget the access code kept for the current workshop URL (the next request will ask again). */
+  function forgetAccessCode() { setCode(null); }
+  return { send, messages, get busy() { return busy; }, get proposal() { return proposal; }, placeProposal, reset, forgetAccessCode,
+    get hasAccessCode() { return getCode() !== null; },
     get workshopUrl() { return workshopUrl; }, set workshopUrl(u) { workshopUrl = String(u); } };
+}
+/** localStorage when the page has it (a private window or blocked storage just means typing the code again). */
+function defaultStorage() {
+  try { if (typeof localStorage !== "undefined") return localStorage; } catch {}
+  const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) };
 }
 
 /**

@@ -1,0 +1,48 @@
+# Fly.io: one always-on machine runs the Dockerfile (the packed client and the
+# workshop server in one process). The owner sets `app` to their app name; its
+# public host is <app>.fly.dev, and WORKSHOP_HOSTS / WORKSHOP_ORIGINS below must
+# be exactly that host and origin (the server refuses every other).
+#
+# Secrets, never here:  fly secrets set ANTHROPIC_API_KEY=... WORKSHOP_ACCESS_CODE=... WORKSHOP_DAILY_CAP=50
+# Deploy by hand:       fly deploy          (CI deploys from main after the tests pass; see .github/workflows/ci.yml)
+# Take it offline:      fly scale count 0   (or fly secrets unset ANTHROPIC_API_KEY; the server then refuses to start)
+app = "mars-sandbox"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  WORKSHOP_BIND = "0.0.0.0"
+  WORKSHOP_PORT = "8787"
+  WORKSHOP_STATIC = "dist"
+  WORKSHOP_HOSTS = "mars-sandbox.fly.dev"
+  WORKSHOP_ORIGINS = "https://mars-sandbox.fly.dev"
+  WORKSHOP_KEEPALIVE_S = "20"
+  WORKSHOP_TRUST_PROXY = "1"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  # always on: the daily cap and the build queue live in the process
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 20
+    hard_limit = 40
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    method = "GET"
+    path = "/health"
+    # the server answers only to its own host (WORKSHOP_HOSTS); the check must say so
+    headers = { Host = "mars-sandbox.fly.dev" }
+
+# the compiler can take a hostile source to several GB before its time limit cuts it (compile.mts);
+# 2 GB means the kernel ends that process and the machine restarts, instead of the box thrashing
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "2gb"

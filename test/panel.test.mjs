@@ -14,7 +14,7 @@ import { BuildQueue } from "../workshop/compile.mts";
 import { LlmError } from "../workshop/llm.mts";
 import { readIndex, readKeys } from "../workshop/prompt.mts";
 import { scanText } from "../scripts/check_secrets.mjs";
-import { weakestTier, citationsFor, citedIds, nextStepFor, askWorkshop, moduleAnswerProblem, toCount, MAX_RETRIES_WHEN_BUSY } from "../web/workshop.mjs";
+import { weakestTier, citationsFor, citedIds, nextStepFor, askWorkshop, moduleAnswerProblem, toCount, resolveWorkshopUrl, DEFAULT_WORKSHOP_URL, MAX_RETRIES_WHEN_BUSY } from "../web/workshop.mjs";
 
 /** The file's budget: package.json runs it with --test-timeout of this; the safety timer fires 10 s before. Measured: 21-24 s here, 24 s on CI, 62 s on a 2-core machine under load (W2 review). A CPU throttle on the page thread changes nothing: the cost is software WebGL in Chrome's GPU process. */
 export const PANEL_BUDGET_MS = 300_000;
@@ -30,23 +30,17 @@ const EXPLANATION = "It reads the typical air temperature for the current hour o
 const moduleReply = (manifest, source, explanation = EXPLANATION) => `===MANIFEST===\n${JSON.stringify(manifest)}\n===SOURCE===\n${source}===EXPLANATION===\n${explanation}\n`;
 function recorded(script) { const calls = []; return { calls, llm: async (system, messages) => { calls.push(messages.map(m => ({ ...m }))); if (!script.length) throw new Error("script exhausted"); const next = script.shift(); return typeof next === "function" ? next() : next; } }; }
 
-const MIME = { ".html": "text/html; charset=utf-8", ".mjs": "text/javascript", ".js": "text/javascript", ".json": "application/json", ".png": "image/png", ".wasm": "application/wasm" };
+/** The page is served the way production serves it (S1): by the workshop server's static handler, with the Content-Security-Policy and the other headers, so a policy that broke the page would fail these tests. The workshop fakes live on other ports, hence the connect-src allowance. */
 function staticServer(dir) {
-  return createServer((req, res) => {
-    const pathname = new URL(req.url, "http://x").pathname;
-    if (pathname === "/favicon.ico") { res.writeHead(204); return res.end(); }
-    const p = path.join(dir, decodeURIComponent(pathname).replace(/\/$/, "/index.html"));
-    if (!p.startsWith(dir) || !existsSync(p)) { res.writeHead(404); return res.end(); }
-    res.writeHead(200, { "content-type": MIME[path.extname(p)] ?? "application/octet-stream" }); res.end(readFileSync(p));
-  });
+  return createWorkshopServer({ llm: async () => { throw new Error("the page server has no workshop"); }, index, keys, build: async () => ({ ok: false, error: "no builds here" }), staticDir: dir, staticConnect: ["http://127.0.0.1:*"] });
 }
-/** A workshop impostor: answers any POST /workshop with whatever `answer(body)` returns ({ status, headers, json }), with CORS for the page. */
+/** A workshop impostor: answers any POST /workshop with whatever `answer(body, headers)` returns ({ status, headers, json }), with CORS for the page. */
 function fakeWorkshop(answer) {
   return createServer((req, res) => {
     const origin = req.headers.origin ?? "*";
-    const cors = { "access-control-allow-origin": origin, "access-control-allow-headers": "content-type", "access-control-allow-methods": "POST, OPTIONS", "access-control-expose-headers": "retry-after" };
+    const cors = { "access-control-allow-origin": origin, "access-control-allow-headers": "content-type, authorization", "access-control-allow-methods": "POST, OPTIONS", "access-control-expose-headers": "retry-after" };
     if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
-    let text = ""; req.on("data", c => text += c); req.on("end", () => { const a = answer(text); res.writeHead(a.status ?? 200, { "content-type": "application/json", ...cors, ...(a.headers ?? {}) }); res.end(JSON.stringify(a.json ?? {})); });
+    let text = ""; req.on("data", c => text += c); req.on("end", () => { const a = answer(text, req.headers); res.writeHead(a.status ?? 200, { "content-type": "application/json", ...cors, ...(a.headers ?? {}) }); res.end(JSON.stringify(a.json ?? {})); });
   });
 }
 const listen = (srv, host = "127.0.0.1") => new Promise(r => srv.listen(0, host, () => r(srv.address().port)));
@@ -63,6 +57,7 @@ before(async () => {
   page.on("request", req => {
     const u = req.url();
     for (const [prefix, dir] of Object.entries(THREE)) if (u.startsWith(prefix)) { const f = path.join(dir, u.slice(prefix.length)); return existsSync(f) ? req.respond({ status: 200, contentType: "text/javascript", headers: { "access-control-allow-origin": "*" }, body: readFileSync(f) }) : req.abort(); }
+    if (u.endsWith("/favicon.ico")) return req.respond({ status: 204 });
     if (u.startsWith("http://localhost:") || u.startsWith("http://127.0.0.1:")) return req.continue();
     req.abort();                                                                    // nothing else leaves the machine
   });
@@ -81,7 +76,7 @@ async function usePage(workshopPort, { width = 900, height = 700 } = {}) {
   errors = []; console_ = [];
   await page.setViewport({ width, height });
   await page.evaluate(port => {
-    window.sandbox.workshop.workshopUrl = `http://127.0.0.1:${port}`; window.sandbox.workshop.reset();
+    window.sandbox.workshop.workshopUrl = `http://127.0.0.1:${port}`; window.sandbox.workshop.reset(); window.sandbox.workshop.forgetAccessCode();
     for (const o of window.sandbox.registry.list()) if (o.id !== "rover") { window.sandbox.registry.remove(o.id); }
     document.getElementById("inspector").hidden = true; document.getElementById("hud").classList.remove("collapsed");
   }, workshopPort);
@@ -125,6 +120,19 @@ test("helpers: weakest tier, citations, cited ids, next steps, counts and answer
   assert.equal(moduleAnswerProblem({ name: "x", wasm: "AA==" }), "no manifest");
   assert.equal(moduleAnswerProblem({ name: "x", manifest: {} }), "no module bytes");
   assert.equal(moduleAnswerProblem({ name: "<b>", wasm: "AA==", manifest: {} }), "bad name");
+});
+
+test("resolveWorkshopUrl: the page's query, then the URL packed into the page, then the local server for a local page, then the page's own origin; the packed page carries the tag", async () => {
+  assert.equal(resolveWorkshopUrl({ search: "?workshop=http://127.0.0.1:1&x=1", packed: "https://p.example", origin: "https://site.example", hostname: "site.example" }), "http://127.0.0.1:1");
+  assert.equal(resolveWorkshopUrl({ search: "?x=1", packed: " https://p.example ", origin: "https://site.example", hostname: "site.example" }), "https://p.example");
+  assert.equal(resolveWorkshopUrl({ search: "", packed: "__WORKSHOP_URL__", origin: "http://localhost:8000", hostname: "localhost" }), DEFAULT_WORKSHOP_URL, "an unreplaced placeholder is ignored");
+  assert.equal(resolveWorkshopUrl({ search: "", packed: "", origin: "http://127.0.0.1:8000", hostname: "127.0.0.1" }), DEFAULT_WORKSHOP_URL, "a local page: the local server, as before");
+  assert.equal(resolveWorkshopUrl({ search: "", packed: "", origin: "https://mars.example", hostname: "mars.example" }), "https://mars.example", "a deployed page: its own origin");
+  assert.equal(resolveWorkshopUrl({ search: "", packed: "", origin: "null", hostname: "" }), DEFAULT_WORKSHOP_URL, "a file:// page");
+  assert.equal(resolveWorkshopUrl(), DEFAULT_WORKSHOP_URL);
+  assert.equal(await page.$eval('meta[name="workshop-url"]', m => m.content), "", "packed without WORKSHOP_URL: the tag is empty and the page decides at run time");
+  assert.match(await page.$eval("#log", e => e.textContent), /server: http:\/\/127\.0\.0\.1:1\b/, "the page's ?workshop= was used");
+  assert.ok((await page.evaluate(() => document.querySelector("#ws-thread").closest("body") !== null)), "the page is served with its security headers and runs");
 });
 
 test("askWorkshop maps every answer shape without throwing", async () => {
@@ -313,6 +321,57 @@ test("panel: an unreachable workshop server says how to start it and how to open
   assert.match(t, /not reachable at http:\/\/127\.0\.0\.1:1/); assert.match(t, /npm run workshop/); assert.match(t, /http:\/\/localhost:8000/);
   assert.equal(await page.$eval("#ws-input", e => e.value), "hello?");
   assert.deepEqual(await page.evaluate(() => window.sandbox.workshop.messages), []);
+});
+
+test("panel: a workshop that asks for an access code prompts once; a wrong code is a readable next step; the accepted code is kept on the device and the message goes out", async () => {
+  const seen = [];
+  const gate = fakeWorkshop((text, h) => {
+    seen.push(h.authorization ?? null);
+    if (h.authorization !== "Bearer open-sesame") return { status: 401, json: { error: h.authorization ? "that access code was not accepted" : "this workshop needs an access code", code: "unauthorized" } };
+    return { json: { type: "questions", text: QUESTIONS } };
+  });
+  const port = await listen(gate);
+  try {
+    await usePage(port);
+    await say("a beacon please");
+    await waitFor("#ws-thread .turn.agent.askcode", 20000);
+    let t = await text("#ws-thread .turn.agent.askcode");
+    assert.match(t, /asks for an access code/); assert.match(t, /kept on this device/); assert.ok(!/\bno\b/i.test(t), "not a no");
+    assert.equal(await page.$eval("#ws-input", e => e.value), "a beacon please", "the message is back in the box meanwhile");
+    assert.deepEqual(await page.evaluate(() => window.sandbox.workshop.messages), [], "and not in the conversation");
+    await page.type("#ws-code", "wrong"); await click("#ws-code-ok");
+    await waitUntil(() => document.querySelectorAll("#ws-thread .turn.agent.askcode").length === 1 && /not accepted/.test(document.querySelector("#ws-thread .turn.agent.askcode").textContent), 20000, "a wrong code: the prompt again, saying so");
+    assert.equal(await page.evaluate(() => window.sandbox.workshop.hasAccessCode), false, "a refused code is not kept");
+    await page.type("#ws-code", "open-sesame"); await page.keyboard.press("Enter");
+    await waitFor("#ws-thread .turn.agent:not(.next)", 20000);
+    assert.match(await text("#ws-thread .turn.agent:not(.next)"), /Before I build/, "the message went out with the accepted code");
+    assert.equal(await page.$$eval("#ws-thread .turn.askcode", els => els.length), 0, "the prompt is gone");
+    assert.equal(await page.evaluate(() => window.sandbox.workshop.hasAccessCode), true);
+    await say("at 1.45 m");
+    await waitUntil(() => document.querySelectorAll("#ws-thread .turn.agent:not(.next)").length === 2, 20000, "the next message needs no prompt");
+    assert.deepEqual(seen, [null, "Bearer wrong", "Bearer open-sesame", "Bearer open-sesame"]);
+    assert.ok(await page.evaluate(() => Object.keys(localStorage).some(k => k.startsWith("mars-sandbox.workshop-code:"))), "kept on this device for next time");
+    const thread = await text("#ws-thread"), msgs = await page.evaluate(() => window.sandbox.workshop.messages);
+    assert.ok(!thread.includes("open-sesame") && !JSON.stringify(msgs).includes("open-sesame"), "the code is never shown in the thread or sent in the conversation");
+    assert.equal(msgs.length, 4);
+  } finally { gate.close(); }
+});
+
+test("panel: a workshop closed for the day is a readable next step with the message restored, as a plain 429 and as the keepalive body shape", async () => {
+  const closedBody = { error: "the workshop is closed for today: its 50 model calls for the day are used up; it opens again at 00:00 UTC, in about 3 hours", code: "closed", reopens_at: "2026-11-12T00:00:00.000Z" };
+  for (const answer of [() => ({ status: 429, headers: { "retry-after": "10800" }, json: closedBody }), () => ({ status: 200, json: { type: "error", status: 429, retry_after: 10800, ...closedBody } })]) {
+    const closed = fakeWorkshop(answer); const port = await listen(closed);
+    try {
+      await usePage(port);
+      await say("a dust gauge");
+      await waitFor("#ws-thread .turn.agent.next", 20000);
+      const t = await text("#ws-thread .turn.agent.next");
+      assert.match(t, /closed for today/); assert.match(t, /00:00 UTC/); assert.match(t, /send it again when it reopens/); assert.match(t, /samples still load/);
+      assert.equal(await page.$eval("#ws-input", e => e.value), "a dust gauge"); assert.deepEqual(await page.evaluate(() => window.sandbox.workshop.messages), []);
+      assert.equal(await page.$eval("#ws-input", e => e.disabled), false);
+      assert.deepEqual(errors.filter(e => !/WebGL|GPU|swiftshader|Failed to load resource/i.test(e)), []);
+    } finally { closed.close(); }
+  }
 });
 
 test("panel: phone-width viewport, collapsible, usable, with the proposal and the inspector open", async () => {
