@@ -31,7 +31,7 @@ export const TICK_HZ = 20;
 export const LOAD_TIMEOUT_MS = 3000;
 export const OVER_BUDGET_STRIKES = 3;  // consecutive over-budget ticks before the module is disabled
 export const MEM_SLOTS = 64;
-export const SENSOR_COUNT = 14;
+export const SENSOR_COUNT = 16;
 export const MAX_SHAPES = 32, STATE_SLOTS = 16, MAX_SIGNALS_PER_TICK = 32, MAX_MEMORY_PAGES = 256;
 export const KIND = { ROVER: 0, ROCK: 1, CHARGER: 2, OBJECT: 3 };
 import { validateManifest } from "./manifest.mjs";

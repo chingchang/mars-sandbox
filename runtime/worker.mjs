@@ -25,7 +25,7 @@ if (isNode) {
 // Append only; never renumber sensor keys.
 export const ALLOWED = new Set(["read", "drive", "set_arm", "set_led", "log", "mem_get", "mem_set",
   "spawn", "pose", "remove", "state_set", "signal_emit", "signal_read", "terrain_height", "nearest", "nearest_bearing", "fact", "fact_tier"]);
-export const SENSOR_COUNT = 14, MEM_SLOTS = 64, MAX_SHAPES = 32, STATE_SLOTS = 16, MAX_SIGNALS_PER_TICK = 32, MAX_MEMORY_PAGES = 256;
+export const SENSOR_COUNT = 16, MEM_SLOTS = 64, MAX_SHAPES = 32, STATE_SLOTS = 16, MAX_SIGNALS_PER_TICK = 32, MAX_MEMORY_PAGES = 256;
 import { memoryPolicy } from "./wasm_limits.mjs";
 
 let instance = null, sensors = new Float32Array(SENSOR_COUNT), mem = new Float32Array(MEM_SLOTS);
