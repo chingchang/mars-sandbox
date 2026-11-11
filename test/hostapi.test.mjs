@@ -200,6 +200,37 @@ test("memory policy covers every memory: a second memory, bounded or not, and me
     assert.equal(reg.enabled(name), false);
   }
 });
+/** Assemble a module from [sectionId, bytes] pairs (sections under 128 bytes). */
+const assemble = (...sections) => Uint8Array.from([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0, ...sections.flatMap(([id, b]) => [id, b.length, ...b])]);
+const S_TYPE_FUNC = [1, [1, 0x60, 0, 0]], S_FUNCS = [3, [2, 0, 0]], S_MEM = [5, [1, 1, 1, 1]];
+const S_EXPORTS = [7, [2, 4, 0x69, 0x6e, 0x69, 0x74, 0, 0, 4, 0x74, 0x69, 0x63, 0x6b, 0, 1]], S_CODE = [10, [2, 2, 0, 0x0b, 2, 0, 0x0b]];
+const GC_TYPES = assemble([1, [2, 0x5e, 0x7e, 0x01, 0x60, 0, 0]], S_FUNCS, S_MEM, S_EXPORTS, S_CODE);      // (type (array (mut i64))) + a func type
+const TABLE_NOMAX = assemble(S_TYPE_FUNC, S_FUNCS, [4, [1, 0x70, 0, 1]], S_MEM, S_EXPORTS, S_CODE);        // (table 1 funcref)
+const TABLE_HUGE = assemble(S_TYPE_FUNC, S_FUNCS, [4, [1, 0x70, 1, 1, 0x80, 0x80, 0x04]], S_MEM, S_EXPORTS, S_CODE); // (table 1 65536 funcref)
+const TABLE_OK = assemble(S_TYPE_FUNC, S_FUNCS, [4, [1, 0x70, 1, 1, 10]], S_MEM, S_EXPORTS, S_CODE);        // (table 1 10 funcref)
+const TABLE64 = assemble(S_TYPE_FUNC, S_FUNCS, [4, [1, 0x70, 4, 1]], S_MEM, S_EXPORTS, S_CODE);             // table64 flag
+
+test("resource policy: GC types and unbounded or large tables are rejected; a small bounded table loads", async () => {
+  assert.match(memoryPolicy(GC_TYPES, MAX_MEMORY_PAGES), /non-function type/);
+  assert.match(memoryPolicy(TABLE_NOMAX, MAX_MEMORY_PAGES), /table declares no maximum/);
+  assert.match(memoryPolicy(TABLE_HUGE, MAX_MEMORY_PAGES), /table declares maximum 65536 entries, ceiling is 256/);
+  assert.match(memoryPolicy(TABLE64, MAX_MEMORY_PAGES), /table64 is not allowed/);
+  assert.equal(memoryPolicy(TABLE_OK, MAX_MEMORY_PAGES), null);
+  for (const name of ["patrol", "return_home", "seek_target", "runaway", "nonfinite", "memhog", "weather_station", "beacon", "churn"]) {
+    assert.equal(memoryPolicy(wasm(name), MAX_MEMORY_PAGES), null, `${name} passes the policy`);
+  }
+  const { reg } = makeWorld();
+  for (const [name, bytes, re] of [["gc", GC_TYPES, /non-function type/], ["tnomax", TABLE_NOMAX, /no maximum size/], ["thuge", TABLE_HUGE, /ceiling is 256/], ["t64", TABLE64, /table64/]]) {
+    reg.add({ id: name });
+    await assert.rejects(reg.load(name, { name, bytes }), re);
+    assert.equal(reg.enabled(name), false);
+  }
+  reg.add({ id: "tok" });
+  await reg.load("tok", { name: "tok", bytes: TABLE_OK });
+  assert.ok(reg.enabled("tok"), "a bounded 10-entry table is allowed");
+  reg.unload("tok");
+});
+
 const EVIL_NO_MEMORY = Uint8Array.from([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 1, 4, 1, 0x60, 0, 0, 3, 3, 2, 0, 0,
   7, 15, 2, 4, 0x69, 0x6e, 0x69, 0x74, 0, 0, 4, 0x74, 0x69, 0x63, 0x6b, 0, 1, 10, 7, 2, 2, 0, 0x0b, 2, 0, 0x0b]);
 

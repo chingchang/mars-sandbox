@@ -94,7 +94,7 @@ const host = {
 onMessage(async m => {
   if (m.type === "load") {
     try {
-      // memory ceiling: exactly one linear memory (or none), declared maximum, under MAX_MEMORY_PAGES, no memory64
+      // resource policy: one bounded 32-bit linear memory (or none), only plain function types (no GC), bounded tables
       const why = memoryPolicy(m.bytes, MAX_MEMORY_PAGES);
       if (why) throw new Error(why);
       const mod = await WebAssembly.compile(m.bytes);
