@@ -4,7 +4,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import Ajv2020 from "ajv/dist/2020.js";
-import { Registry, nodeSpawner, SENSOR_COUNT, MAX_SHAPES, MAX_MEMORY_PAGES } from "../runtime/registry.mjs";
+import { Registry, nodeSpawner, SENSOR_COUNT, MAX_SHAPES, MAX_MEMORY_PAGES, MEM_SLOTS, STATE_SLOTS, MAX_SIGNALS_PER_TICK, MAX_LOGS_PER_TICK, PER_TICK_CAPS } from "../runtime/registry.mjs";
 import { buildFactTable } from "../runtime/facts.mjs";
 import { validateManifest } from "../runtime/manifest.mjs";
 import { memoryLimits, memoryPolicy, sizePolicy, MAX_MODULE_BYTES, MAX_TABLES } from "../runtime/wasm_limits.mjs";
@@ -165,7 +165,9 @@ test("memory ceiling: memhog is capped at 256 pages and keeps running; a module 
   const { reg, events, run } = makeWorld();
   reg.add({ id: "m" });
   await reg.load("m", { name: "memhog", bytes: wasm("memhog"), logNames: { 40: "pages", 41: "failed grows" } });
-  await run(300, 0.05, 2);
+  // same here: tick until the growth has hit the ceiling (a failed grow is logged), bounded
+  const failedGrow = () => events.some(e => e.type === "log" && e.id === "m" && /failed grows [1-9]/.test(e.text));
+  let ticks = 0; while (!failedGrow() && ticks < 1200) { await run(1, 0.05, 2); ticks++; }
   const st = reg.stats("m");
   assert.ok(st.enabled, "still running");
   assert.ok(st.memBytes <= MAX_MEMORY_PAGES * 65536, `memory ${st.memBytes} within ceiling`);
@@ -189,6 +191,8 @@ const withMemorySection = (...mem) => Uint8Array.from([0x00, 0x61, 0x73, 0x6d, 1
 const TWO_MEM_UNBOUNDED = withMemorySection(2, 1, 1, 1, 0, 1);                 // (memory 1 1) (memory 1)
 const TWO_MEM_HUGE = withMemorySection(2, 1, 1, 1, 1, 1, 0x80, 0x80, 0x04);    // (memory 1 1) (memory 1 65536)
 const MEMORY64 = withMemorySection(1, 4, 1);                                   // (memory i64 1)
+const SHARED = withMemorySection(1, 3, 1, 1);                                  // (memory 1 1 shared): flag 3
+const SHARED_NOMAX = withMemorySection(1, 2, 1);                               // flag 2: shared without a maximum (invalid wasm, refused before compile anyway)
 
 test("memory policy covers every memory: a second memory, bounded or not, and memory64 are rejected", async () => {
   assert.equal(memoryLimits(TWO_MEM_UNBOUNDED).length, 2);
@@ -197,10 +201,12 @@ test("memory policy covers every memory: a second memory, bounded or not, and me
   assert.match(memoryPolicy(TWO_MEM_HUGE, MAX_MEMORY_PAGES), /declares 2 memories/);
   assert.throws(() => memoryLimits(MEMORY64), /memory64 is not allowed/);
   assert.match(memoryPolicy(MEMORY64, MAX_MEMORY_PAGES), /memory64/);
+  assert.match(memoryPolicy(SHARED, MAX_MEMORY_PAGES), /shared memory is not allowed/, "a shared memory within the ceiling is still refused");
+  assert.match(memoryPolicy(SHARED_NOMAX, MAX_MEMORY_PAGES), /shared memory is not allowed/);
   assert.equal(memoryPolicy(wasm("patrol"), MAX_MEMORY_PAGES), null);
   assert.equal(memoryPolicy(EVIL_NO_MEMORY, MAX_MEMORY_PAGES), null, "a module with no memory has nothing to grow");
   const { reg } = makeWorld();
-  for (const [name, bytes, re] of [["two_unbounded", TWO_MEM_UNBOUNDED, /declares 2 memories/], ["two_huge", TWO_MEM_HUGE, /declares 2 memories/], ["mem64", MEMORY64, /memory64/]]) {
+  for (const [name, bytes, re] of [["two_unbounded", TWO_MEM_UNBOUNDED, /declares 2 memories/], ["two_huge", TWO_MEM_HUGE, /declares 2 memories/], ["mem64", MEMORY64, /memory64/], ["shared", SHARED, /shared memory/]]) {
     reg.add({ id: name });
     await assert.rejects(reg.load(name, { name, bytes }), re);
     assert.equal(reg.enabled(name), false);
@@ -222,7 +228,7 @@ test("resource policy: GC types and unbounded or large tables are rejected; a sm
   assert.match(memoryPolicy(TABLE_HUGE, MAX_MEMORY_PAGES), /table declares maximum 65536 entries, ceiling is 256/);
   assert.match(memoryPolicy(TABLE64, MAX_MEMORY_PAGES), /table64 is not allowed/);
   assert.equal(memoryPolicy(TABLE_OK, MAX_MEMORY_PAGES), null);
-  for (const name of ["patrol", "return_home", "seek_target", "runaway", "nonfinite", "memhog", "weather_station", "beacon", "churn"]) {
+  for (const name of ["patrol", "return_home", "seek_target", "runaway", "nonfinite", "memhog", "weather_station", "beacon", "churn", "flood"]) {
     assert.equal(memoryPolicy(wasm(name), MAX_MEMORY_PAGES), null, `${name} passes the policy`);
   }
   const { reg } = makeWorld();
@@ -257,9 +263,10 @@ test("resource policy: the table count and the module size are capped; an oversi
   assert.match(memoryPolicy(MANY_TABLES, MAX_MEMORY_PAGES), /declares 1000 tables, ceiling is 1/);
   assert.match(memoryPolicy(TABLE_INIT_ENC, MAX_MEMORY_PAGES), /initialiser expression is not allowed/);
   assert.equal(OVERSIZE.length, MAX_MODULE_BYTES + 1);
-  assert.match(sizePolicy(OVERSIZE.length), /ceiling is 1048576/);
+  assert.equal(MAX_MODULE_BYTES, 65536, "64 KiB; the largest sample is 2.3 KB");
+  assert.match(sizePolicy(OVERSIZE.length), new RegExp(`ceiling is ${MAX_MODULE_BYTES}`));
   assert.equal(sizePolicy(MAX_MODULE_BYTES), null, "exactly the ceiling is allowed");
-  assert.match(memoryPolicy(OVERSIZE, MAX_MEMORY_PAGES), /module is 1048577 bytes, ceiling is 1048576/);
+  assert.match(memoryPolicy(OVERSIZE, MAX_MEMORY_PAGES), new RegExp(`module is ${MAX_MODULE_BYTES + 1} bytes, ceiling is ${MAX_MODULE_BYTES}`));
   assert.equal(memoryPolicy(OVERSIZE.subarray(0, TABLE_OK.length), MAX_MEMORY_PAGES), null, "the same module without the padding passes");
   for (const name of ["patrol", "return_home", "seek_target", "runaway", "nonfinite", "memhog", "weather_station", "beacon", "churn"]) {
     assert.ok(wasm(name).length < 4096 && memoryPolicy(wasm(name), MAX_MEMORY_PAGES) === null, `${name} passes the policy`);
@@ -273,23 +280,51 @@ test("resource policy: the table count and the module size are capped; an oversi
   }
   assert.equal(spawned, 3, "declaration checks happen in the worker's policy");
   reg.add({ id: "big" });
-  await assert.rejects(reg.load("big", { name: "big", bytes: OVERSIZE }), /module is 1048577 bytes, ceiling is 1048576/);
-  await assert.rejects(reg.load("big", { name: "big", bytes: OVERSIZE.buffer.slice(OVERSIZE.byteOffset, OVERSIZE.byteOffset + OVERSIZE.byteLength) }), /ceiling is 1048576/, "an ArrayBuffer is measured too");
+  await assert.rejects(reg.load("big", { name: "big", bytes: OVERSIZE }), new RegExp(`module is ${MAX_MODULE_BYTES + 1} bytes, ceiling is ${MAX_MODULE_BYTES}`));
+  await assert.rejects(reg.load("big", { name: "big", bytes: OVERSIZE.buffer.slice(OVERSIZE.byteOffset, OVERSIZE.byteOffset + OVERSIZE.byteLength) }), new RegExp(`ceiling is ${MAX_MODULE_BYTES}`), "an ArrayBuffer is measured too");
   assert.equal(spawned, 3, "the oversize module was refused before a worker was spawned");
   assert.equal(reg.enabled("big"), false);
-  assert.ok(events.some(e => e.type === "log" && e.id === "big" && /rejected "big": module is 1048577 bytes/.test(e.text)), "the refusal is logged with the reason");
+  assert.ok(events.some(e => e.type === "log" && e.id === "big" && new RegExp(`rejected "big": module is ${MAX_MODULE_BYTES + 1} bytes`).test(e.text)), "the refusal is logged with the reason");
 });
 
 const EVIL_NO_MEMORY = Uint8Array.from([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 1, 4, 1, 0x60, 0, 0, 3, 3, 2, 0, 0,
   7, 15, 2, 4, 0x69, 0x6e, 0x69, 0x74, 0, 0, 4, 0x74, 0x69, 0x63, 0x6b, 0, 1, 10, 7, 2, 2, 0, 0x0b, 2, 0, 0x0b]);
 
+test("per-tick caps: the worker keeps one pose per handle and one value per slot, 8 logs and 32 signals; the sanitizer cuts longer lists", async () => {
+  assert.deepEqual(PER_TICK_CAPS, { spawn: 32, pose: 32, remove: 32, state: 16, mem: 64, signals: 32, logs: 8 });
+  const { reg, events, run } = makeWorld();
+  reg.add({ id: "f" });
+  await reg.load("f", { name: "flood", bytes: wasm("flood"), logNames: { 70: "flood" } });
+  const acts = () => events.filter(e => e.type === "actions" && e.id === "f").map(e => e.actions);
+  let ticks = 0; while (acts().length < 3 && ticks < 60) { await run(1, 0.05, 10); ticks++; }
+  const a = acts().at(-1);
+  assert.ok(acts().length >= 3, "the module ticked");
+  assert.equal(a.pose.length, 1, "1000 pose calls on one handle become one entry"); assert.ok(Math.abs(a.pose[0][1] - 0.999) < 1e-5, "the last pose wins");
+  assert.equal(a.state.length, 1); assert.equal(a.state[0][0], 0); assert.equal(a.state[0][1], 999, "the last state_set wins");
+  assert.equal(a.mem.length, 1); assert.equal(a.mem[0][0], 3); assert.ok(a.mem[0][1] % 1000 === 999, "the last mem_set wins");
+  assert.equal(a.logs.length, MAX_LOGS_PER_TICK); assert.equal(a.signals.length, MAX_SIGNALS_PER_TICK);
+  assert.equal(reg.get("f").state[0], 999, "the slot holds the last value");
+  assert.equal(reg.get("f").mem[3] % 1000, 999, "host memory holds the last value");
+  assert.equal(reg.stats("f").badActions, 0, "nothing the worker sent was over a cap");
+  reg.unload("f");
+  // a misbehaving worker (scripted lists) is cut by the sanitizer and the extra entries count as bad
+  const many = (n, f) => Array.from({ length: n }, (_, i) => f(i));
+  const { actions, bad } = Registry.sanitizeActions({ throttle: 0, steer: 0, logs: many(20, i => [1, i]), mem: many(100, i => [i % 64, i]), spawn: many(40, i => [i % 32, 0, 1, 1, 1, 0.5, 0.5, 0.5]),
+    pose: many(50, i => [i % 32, 0, 0, 0, 0, 0]), remove: many(40, i => i % 32), state: many(30, i => [i % 16, i]), signals: many(40, i => [1, i]) });
+  assert.deepEqual([actions.logs.length, actions.mem.length, actions.spawn.length, actions.pose.length, actions.remove.length, actions.state.length, actions.signals.length], [8, 64, 32, 32, 32, 16, 32]);
+  assert.equal(bad, 12 + 36 + 8 + 18 + 8 + 14 + 8);
+});
+
 test("handles are reused: 100 spawn/remove cycles never fail and hold at most one live shape", async () => {
   const { reg, events, run } = makeWorld();
   reg.add({ id: "c" });
   await reg.load("c", { name: "churn", bytes: wasm("churn"), logNames: { 60: "handle" } });
-  await run(100, 0.05, 5);
-  const handles = events.filter(e => e.type === "actions" && e.id === "c").flatMap(e => e.actions.logs.filter(([c]) => c === 60).map(([, v]) => v));
-  assert.ok(handles.length >= 100, `${handles.length} spawns`);
+  // Registry.tick skips an object whose previous tick has not answered, so a fixed number of ticks at a fixed pause
+  // is not a fixed number of spawns: tick until 100 have been logged, with a bound so a real fault still fails
+  const logged = () => events.filter(e => e.type === "actions" && e.id === "c").flatMap(e => e.actions.logs.filter(([c]) => c === 60).map(([, v]) => v));
+  let ticks = 0; while (logged().length < 100 && ticks < 400) { await run(1, 0.05, 5); ticks++; }
+  const handles = logged();
+  assert.ok(handles.length >= 100, `${handles.length} spawns after ${ticks} ticks`);
   assert.ok(handles.every(h => h >= 0 && h < 2), `handles alternate between 0 and 1, never -1: ${[...new Set(handles)].join(",")}`);
   assert.ok(handles.includes(0) && handles.includes(1), "the freed handle is reused on the following tick");
   assert.equal(reg.get("c").shapes.size, 1);

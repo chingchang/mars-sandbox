@@ -8,8 +8,9 @@
 //     can repeat (functions, globals, data and element segments, exports) costs
 //     engine memory in proportion to the binary, measured at up to ~25x, so one
 //     cap on the binary bounds all of them together;
-//   - exactly one linear memory (or none), not imported, 32-bit, with a declared
-//     maximum of at most MAX_MEMORY_PAGES (multi-memory would be a second door);
+//   - exactly one linear memory (or none), not imported, not shared, 32-bit, with
+//     a declared maximum of at most MAX_MEMORY_PAGES (multi-memory would be a
+//     second door; a shared memory is for threads the sandbox does not have);
 //   - only plain function types in the type section: no struct, array, rec or
 //     sub types, so no WasmGC allocation is possible;
 //   - at most MAX_TABLES tables (each declared table costs ~9 KB of engine
@@ -22,7 +23,7 @@
 export const FLAG_64 = 0x04;
 export const MAX_TABLE_ELEMENTS = 256;
 export const MAX_TABLES = 1;
-export const MAX_MODULE_BYTES = 1 << 20;   // 1 MiB; the largest sample is 2.3 KB
+export const MAX_MODULE_BYTES = 1 << 16;   // 64 KiB; the largest sample is 2.3 KB. Engine overhead scales with the binary: a 90 KB binary of nested blocks cost 34 MiB of process memory in review, so this cap bounds the worst case at roughly 25 MiB
 const FUNC_TYPE = 0x60;
 const TABLE_WITH_INIT = 0x40;              // function-references encoding: 0x40 0x00 reftype limits expr
 
@@ -36,7 +37,8 @@ export function inspectModule(bytes) {
   const limits = (what, imported) => {
     const flag = u8[p++];
     if (flag & FLAG_64) throw new Error(`${what}64 is not allowed`);
-    if (what === "memory" ? flag > 3 : flag > 1) throw new Error(`unknown ${what} limits flag ${flag}`);
+    if (what === "memory" && (flag & 2)) throw new Error("shared memory is not allowed");
+    if (flag > 1) throw new Error(`unknown ${what} limits flag ${flag}`);
     const min = u32(); const max = (flag & 1) ? u32() : null;
     return { min, max, imported, flag };
   };

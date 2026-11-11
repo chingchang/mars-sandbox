@@ -25,7 +25,11 @@ if (isNode) {
 // Append only; never renumber sensor keys.
 export const ALLOWED = new Set(["read", "drive", "set_arm", "set_led", "log", "mem_get", "mem_set",
   "spawn", "pose", "remove", "state_set", "signal_emit", "signal_read", "terrain_height", "nearest", "nearest_bearing", "fact", "fact_tier"]);
-export const SENSOR_COUNT = 16, MEM_SLOTS = 64, MAX_SHAPES = 32, STATE_SLOTS = 16, MAX_SIGNALS_PER_TICK = 32, MAX_MEMORY_PAGES = 256;
+export const SENSOR_COUNT = 16, MEM_SLOTS = 64, MAX_SHAPES = 32, STATE_SLOTS = 16, MAX_SIGNALS_PER_TICK = 32, MAX_LOGS_PER_TICK = 8, MAX_MEMORY_PAGES = 256;
+// Per-tick request lists are bounded whatever the module does: spawn and remove by the handle
+// space (at most MAX_SHAPES each), pose by handle and state_set / mem_set by slot (a later call in
+// the same tick overwrites the earlier one), logs at MAX_LOGS_PER_TICK, signals at
+// MAX_SIGNALS_PER_TICK. So the host never receives more than a few hundred entries per tick.
 import { memoryPolicy } from "./wasm_limits.mjs";
 
 let instance = null, sensors = new Float32Array(SENSOR_COUNT), mem = new Float32Array(MEM_SLOTS);
@@ -42,6 +46,8 @@ const fin = v => (Number.isFinite(v) ? v : 0);
 const wrapAngle = a => { a = fin(a); if (Math.abs(a) <= Math.PI) return a; a = a % (2 * Math.PI); return a > Math.PI ? a - 2 * Math.PI : a < -Math.PI ? a + 2 * Math.PI : a; };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, fin(v)));
 function freshActions() { return { throttle: 0, steer: 0, arm: null, led: null, logs: [], mem: [], spawn: [], pose: [], remove: [], state: [], signals: [] }; }
+/** One entry per key (handle or slot) in a per-tick list: a later call in the same tick replaces the earlier one. */
+function setByKey(list, key, entry) { for (let i = 0; i < list.length; i++) if (list[i][0] === key) { list[i] = entry; return; } list.push(entry); }
 function terrainHeight(x, z) {
   if (!terrain || !Number.isFinite(x) || !Number.isFinite(z)) return 0;
   const { n, res, cx, cz, data } = terrain;
@@ -65,9 +71,9 @@ const host = {
   drive: (t, s) => { act.throttle = clamp(t, -1, 1); act.steer = clamp(s, -1, 1); },
   set_arm: a => { act.arm = clamp(a, 0, 1); },
   set_led: (r, g, b) => { act.led = [r, g, b].map(v => clamp(v, 0, 1)); },
-  log: (c, v) => { if (Number.isFinite(v) && act.logs.length < 8) act.logs.push([c | 0, v]); },
+  log: (c, v) => { if (Number.isFinite(v) && act.logs.length < MAX_LOGS_PER_TICK) act.logs.push([c | 0, v]); },
   mem_get: i => (i >= 0 && i < MEM_SLOTS) ? mem[i | 0] : 0,
-  mem_set: (i, v) => { if (i >= 0 && i < MEM_SLOTS && Number.isFinite(v)) { mem[i | 0] = v; act.mem.push([i | 0, v]); } },
+  mem_set: (i, v) => { if (i >= 0 && i < MEM_SLOTS && Number.isFinite(v)) { mem[i | 0] = v; setByKey(act.mem, i | 0, [i | 0, v]); } },
   // ---- generic object API (X1) ----
   spawn: (shape, w, h, d, r, g, b) => {
     if (shapes.size >= MAX_SHAPES) return -1;
@@ -79,9 +85,9 @@ const host = {
     return handle;
   },
   // offsets clamped to +/-50 m (the size cap) so a module cannot draw on top of a distant object; angles wrapped to +/-pi
-  pose: (handle, x, y, z, yaw, pitch) => { if (shapes.has(handle | 0)) act.pose.push([handle | 0, clamp(x, -50, 50), clamp(y, -50, 50), clamp(z, -50, 50), wrapAngle(yaw), wrapAngle(pitch)]); },
+  pose: (handle, x, y, z, yaw, pitch) => { if (shapes.has(handle | 0)) setByKey(act.pose, handle | 0, [handle | 0, clamp(x, -50, 50), clamp(y, -50, 50), clamp(z, -50, 50), wrapAngle(yaw), wrapAngle(pitch)]); },
   remove: handle => { if (shapes.delete(handle | 0)) { freedThisTick.add(handle | 0); act.remove.push(handle | 0); } },
-  state_set: (slot, v) => { if (slot >= 0 && slot < STATE_SLOTS && Number.isFinite(v)) act.state.push([slot | 0, v]); },
+  state_set: (slot, v) => { if (slot >= 0 && slot < STATE_SLOTS && Number.isFinite(v)) setByKey(act.state, slot | 0, [slot | 0, v]); },
   signal_emit: (code, v) => { if (code >= 0 && code <= 65535 && Number.isFinite(v) && act.signals.length < MAX_SIGNALS_PER_TICK) act.signals.push([code | 0, v]); },
   signal_read: code => signalsIn.get(code | 0) ?? 0,
   terrain_height: (x, z) => terrainHeight(x, z),

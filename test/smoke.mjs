@@ -6,7 +6,12 @@
 // under the watchdog is not.
 import { readFileSync } from "node:fs";
 import { Worker } from "node:worker_threads";
-import { BUDGET_MS, OVER_BUDGET_STRIKES, WATCHDOG_MS, tickVerdict } from "../runtime/registry.mjs";
+import { BUDGET_MS, OVER_BUDGET_STRIKES, WATCHDOG_MS, PER_TICK_CAPS, tickVerdict } from "../runtime/registry.mjs";
+// A module that calls an actuator more times in one tick than the world can keep (one pose per
+// handle, one value per slot, 8 logs, 32 signals) is refused: the extra calls are wasted work
+// and the world would drop them silently.
+const CALL_CAPS = { spawn: PER_TICK_CAPS.spawn, pose: PER_TICK_CAPS.pose, remove: PER_TICK_CAPS.remove, state_set: PER_TICK_CAPS.state, mem_set: PER_TICK_CAPS.mem, signal_emit: PER_TICK_CAPS.signals, log: PER_TICK_CAPS.logs };
+const CAP_WHY = { spawn: "one per shape handle", pose: "one per shape handle", remove: "one per shape handle", state_set: "one per state slot", mem_set: "one per memory slot", signal_emit: "signals per tick", log: "log lines per tick" };
 
 const name = process.argv[2];                       // a sample name (build/<name>.wasm) or a path to a .wasm file (the workshop server)
 const bytes = readFileSync(name.endsWith(".wasm") ? name : new URL(`../build/${name}.wasm`, import.meta.url));
@@ -25,17 +30,20 @@ const SOL = INDEX.facts["mars.time.sol"].value, SOL_KEY = KEYS.keys["mars.time.s
 const code = `
   import { parentPort, workerData } from "node:worker_threads";
   let t=0, drives=0, handles=0; const mem=new Float32Array(64); const times=[]; let run=0;
+  const CAPS = ${JSON.stringify(CALL_CAPS)}; let calls = {}; const count = k => { calls[k] = (calls[k] ?? 0) + 1; };
   const sens = k => [Math.sin(t)*20, Math.cos(t)*20, t*0.1, 1.5, Math.max(0,1-t/200), 60, t, 15, 0.3, 0.05, (t%20<2)?3:99, 1, 30, -0.4, 200+40*Math.sin(t/60), (t/240*24)%24][k] ?? 0;   // 14: ENV_AIR_TEMP_K swinging around -70 C; 15: ENV_LOCAL_HOUR on a 240 s sol
   // "drives" counts any actuator: drive, spawn, pose, state_set, signal_emit (a weather station never drives)
   const SOL = ${SOL}, SOL_KEY = ${SOL_KEY};
-  const host = { read: sens, drive(){drives++}, set_arm(){}, set_led(){}, log(){}, mem_get:i=>mem[i|0]??0, mem_set:(i,v)=>{mem[i|0]=v},
-    spawn(){ drives++; return handles < 32 ? handles++ : -1; }, pose(){drives++}, remove(){}, state_set(){drives++}, signal_emit(){drives++}, signal_read(){return 0},
+  const host = { read: sens, drive(){drives++}, set_arm(){}, set_led(){}, log(){count("log")}, mem_get:i=>mem[i|0]??0, mem_set:(i,v)=>{mem[i|0]=v; count("mem_set")},
+    spawn(){ drives++; count("spawn"); return handles < 32 ? handles++ : -1; }, pose(){drives++; count("pose")}, remove(){count("remove")}, state_set(){drives++; count("state_set")}, signal_emit(){drives++; count("signal_emit")}, signal_read(){return 0},
     terrain_height(){return 0}, nearest(k){return k===0 ? 12 : -1}, nearest_bearing(){return 0.5}, fact(k){return k===SOL_KEY ? SOL : 200}, fact_tier(){return 1} };
   const { instance } = await WebAssembly.instantiate(workerData, { host });
   try {
     instance.exports.init();
     for (let i=0;i<600;i++) {
+      calls = {};
       const a=performance.now(); instance.exports.tick(0.05); const ms=performance.now()-a; times.push(ms); t+=0.05;
+      for (const k in calls) if (calls[k] > CAPS[k]) { parentPort.postMessage({ err: "over the per-tick cap: called " + k + " " + calls[k] + " times in one tick; the world keeps at most " + CAPS[k] + " (" + ${JSON.stringify(CAP_WHY)}[k] + ")" }); process.exit(0); }
       run = ms > ${BUDGET_MS} ? run + 1 : 0;
       if (ms > ${WATCHDOG_MS} || run >= ${OVER_BUDGET_STRIKES}) break;   // the world would have killed or disabled it here; no need to run on
     }

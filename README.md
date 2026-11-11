@@ -40,13 +40,27 @@ Proof of concept for the "player extends the running game" loop. For the compone
     npm install
     npm run facts            # validate facts/*.json, write facts/index.json
     ./build.sh && npm test && node pack.mjs
-    python3 -m http.server -d dist 8000      # open http://localhost:8000
+    python3 -m http.server -d dist 8000      # then open http://localhost:8000 in a browser
 
-Generate a new behavior from a prompt and load it with "Load my own .wasm":
+Open the page from `http://localhost:8000`, not by double-clicking `dist/index.html`:
+a page opened as a file sends `Origin: null` and the workshop server refuses it
+(as it refuses every page that is not local), so the workshop panel cannot build
+anything from a `file://` page. The panel says so in plain words if the server is
+not reachable. Query options: `?terrain=hirise|mola|procedural`, `?workshop=<url>`
+(default `http://127.0.0.1:8787`), `?fx=low` (no shadows, pixel ratio 1, coarser
+terrain: for weak GPUs, software rendering and the headless tests).
 
-    export ANTHROPIC_API_KEY=...
+Build something from a description in the workshop panel (the page talks to the
+workshop server on `127.0.0.1:8787`; the key stays on the server):
+
     cp .env.example .env            # ANTHROPIC_API_KEY=...  (gitignored, never committed)
     npm run workshop                # POST http://127.0.0.1:8787/workshop {"messages":[{"role":"user","content":"..."}]}
+
+Then, on the page: tap the ground where the object should go (or leave it to
+appear beside the rover), describe it in the Workshop box, answer the agent's
+questions, and confirm the proposal once it has been built and tested. The
+inspector shows each object's state slots, the weakest provenance tier of the
+facts it rests on, their citations, and the "did you know" line.
     python3 generate.py "zigzag toward the charger and stop 3 m short" --name zigzag   # older CLI loop
 
 ## Terrain
@@ -80,7 +94,7 @@ elevation; the sidecar carries the height above the datum).
 - many objects at once: each registry entry (id, owner, version, position, manifest) has its own worker,
   budget, watchdog and memory; a hung or trapping module takes down only its own object; replacing one
   object's module leaves the others untouched. The rover is the first entry, not a special case.
-  Until the workshop panel exists: `sandbox.addObject("beacon", 10, -5); sandbox.loadInto("beacon", "patrol")` in the console.
+  Developer hooks: `sandbox.addObject("beacon", 10, -5); sandbox.loadInto("beacon", "weather_station"); sandbox.inspect("beacon")` in the console.
 
 ## Honest caveats
 

@@ -48,14 +48,16 @@ export function tickVerdict(times, budget = BUDGET_MS, strikes = OVER_BUDGET_STR
   }
   const mean = times.length ? sum / times.length : 0;
   let reason = null;
-  if (worst > watchdog) reason = `a tick took ${worst.toFixed(0)} ms; the world stops a module whose tick does not return within ${watchdog} ms`;
+  if (worst > watchdog) reason = `a tick took ${worst.toFixed(1)} ms; the world stops a module whose tick does not return within ${watchdog} ms`;
   else if (longest >= strikes) reason = `${strikes} ticks in a row over ${budget} ms (worst ${worst.toFixed(2)} ms)`;
   else if (mean > budget) reason = `mean tick ${mean.toFixed(2)} ms, budget is ${budget} ms`;
   return { ok: reason === null, reason, worst, over, mean, strikes: longest };
 }
 export const MEM_SLOTS = 64;
 export const SENSOR_COUNT = 16;
-export const MAX_SHAPES = 32, STATE_SLOTS = 16, MAX_SIGNALS_PER_TICK = 32, MAX_MEMORY_PAGES = 256;
+export const MAX_SHAPES = 32, STATE_SLOTS = 16, MAX_SIGNALS_PER_TICK = 32, MAX_LOGS_PER_TICK = 8, MAX_MEMORY_PAGES = 256;
+/** The most entries each per-tick request list may carry (the worker keeps one per handle or slot; the sanitizer cuts anything longer). */
+export const PER_TICK_CAPS = Object.freeze({ spawn: MAX_SHAPES, pose: MAX_SHAPES, remove: MAX_SHAPES, state: STATE_SLOTS, mem: MEM_SLOTS, signals: MAX_SIGNALS_PER_TICK, logs: MAX_LOGS_PER_TICK });
 export const KIND = { ROVER: 0, ROCK: 1, CHARGER: 2, OBJECT: 3 };
 import { validateManifest } from "./manifest.mjs";
 import { sizePolicy, MAX_MODULE_BYTES } from "./wasm_limits.mjs";
@@ -224,17 +226,19 @@ export class Registry {
                   ms: Number.isFinite(a.ms) ? a.ms : undefined, memBytes: Number.isFinite(a.memBytes) ? a.memBytes : undefined };
     if (a.arm !== null && a.arm !== undefined) out.arm = num(a.arm, 0, 1);
     if (Array.isArray(a.led) && a.led.length === 3) out.led = a.led.map(v => num(v, 0, 1));
-    for (const e of Array.isArray(a.logs) ? a.logs : []) { if (Array.isArray(e) && Number.isInteger(e[0]) && Number.isFinite(e[1])) out.logs.push([e[0], e[1]]); else bad++; }
-    for (const e of Array.isArray(a.mem) ? a.mem : []) { if (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < MEM_SLOTS && Number.isFinite(e[1])) out.mem.push([e[0], e[1]]); else bad++; }
+    // every list is cut at its cap (PER_TICK_CAPS): a worker that sends more is misbehaving, and the extra entries count as bad
+    const capped = (arr, cap) => { const list = Array.isArray(arr) ? arr : []; if (list.length > cap) bad += list.length - cap; return list.slice(0, cap); };
+    for (const e of capped(a.logs, MAX_LOGS_PER_TICK)) { if (Array.isArray(e) && Number.isInteger(e[0]) && Number.isFinite(e[1])) out.logs.push([e[0], e[1]]); else bad++; }
+    for (const e of capped(a.mem, MEM_SLOTS)) { if (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < MEM_SLOTS && Number.isFinite(e[1])) out.mem.push([e[0], e[1]]); else bad++; }
     const handle = h => Number.isInteger(h) && h >= 0 && h < MAX_SHAPES;
     const allFinite = (arr, n) => Array.isArray(arr) && arr.length === n && arr.every(Number.isFinite);
-    for (const e of Array.isArray(a.spawn) ? a.spawn : []) {
+    for (const e of capped(a.spawn, MAX_SHAPES)) {
       if (allFinite(e, 8) && handle(e[0]) && Number.isInteger(e[1]) && e[1] >= 0 && e[1] <= 4) out.spawn.push([e[0], e[1], ...e.slice(2, 5).map(v => Math.max(0.01, Math.min(50, v))), ...e.slice(5, 8).map(v => Math.max(0, Math.min(1, v)))]); else bad++;
     }
-    for (const e of Array.isArray(a.pose) ? a.pose : []) { if (allFinite(e, 6) && handle(e[0])) out.pose.push([...e]); else bad++; }
-    for (const h of Array.isArray(a.remove) ? a.remove : []) { if (handle(h)) out.remove.push(h); else bad++; }
-    for (const e of Array.isArray(a.state) ? a.state : []) { if (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < STATE_SLOTS && Number.isFinite(e[1])) out.state.push([e[0], e[1]]); else bad++; }
-    for (const e of Array.isArray(a.signals) ? a.signals : []) { if (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] <= 65535 && Number.isFinite(e[1]) && out.signals.length < MAX_SIGNALS_PER_TICK) out.signals.push([e[0], e[1]]); else bad++; }
+    for (const e of capped(a.pose, MAX_SHAPES)) { if (allFinite(e, 6) && handle(e[0])) out.pose.push([...e]); else bad++; }
+    for (const h of capped(a.remove, MAX_SHAPES)) { if (handle(h)) out.remove.push(h); else bad++; }
+    for (const e of capped(a.state, STATE_SLOTS)) { if (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < STATE_SLOTS && Number.isFinite(e[1])) out.state.push([e[0], e[1]]); else bad++; }
+    for (const e of capped(a.signals, MAX_SIGNALS_PER_TICK)) { if (Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] <= 65535 && Number.isFinite(e[1])) out.signals.push([e[0], e[1]]); else bad++; }
     return { actions: out, bad };
   }
 
