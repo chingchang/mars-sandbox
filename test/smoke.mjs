@@ -3,8 +3,8 @@
 import { readFileSync } from "node:fs";
 import { Worker } from "node:worker_threads";
 
-const name = process.argv[2];
-const bytes = readFileSync(new URL(`../build/${name}.wasm`, import.meta.url));
+const name = process.argv[2];                       // a sample name (build/<name>.wasm) or a path to a .wasm file (the workshop server)
+const bytes = readFileSync(name.endsWith(".wasm") ? name : new URL(`../build/${name}.wasm`, import.meta.url));
 const mod = await WebAssembly.compile(bytes);
 const ALLOWED = new Set(["read","drive","set_arm","set_led","log","mem_get","mem_set",
   "spawn","pose","remove","state_set","signal_emit","signal_read","terrain_height","nearest","nearest_bearing","fact","fact_tier"]);

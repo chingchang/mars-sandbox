@@ -51,7 +51,7 @@ Three things to hold onto:
 | **Host API** | The fixed list of functions a module may call: read environment, request movement, spawn shapes, set state, emit signals | Defined in `behaviors/host.ts`, implemented in the runtime, documented in `docs/HOST_API.md` | Yes: rover calls plus the generic calls (X1) |
 | **Module** | A compiled Wasm program the player (via the LLM) created: a behavior, a device, a creature, a structure | Inside one worker | Yes, four hand-written samples |
 | **Manifest** | JSON beside each module: name, description, declared state slots, declared signals, author, version, fact ids | Stored with the module; schema in `runtime/manifest.schema.json` | Yes (X1); the inspector panel that renders it is W2 |
-| **Workshop server** | Small HTTP service: holds the LLM key, builds the prompt from the host API and `facts/index.json`, calls the LLM, compiles AssemblyScript to Wasm with `asc`, runs the smoke tests, returns the artifact | A Node process; locally on the laptop, later on Vercel | MVP (today `generate.py` does this from the command line) |
+| **Workshop server** | Small HTTP service: holds the LLM key, builds the prompt from the host API and `facts/index.json`, calls the LLM, compiles AssemblyScript to Wasm with `asc`, runs the smoke tests, returns the artifact | A Node process; locally on the laptop, later on Vercel | Yes (W1): `workshop/`, `npm run workshop`; `generate.py` is the older CLI version |
 | **Facts layer** | Sourced, tiered Mars data: `facts/*.json` validated into `facts/index.json` | Build-time; the index ships with the client and the server | Yes |
 | **Terrain** | Real Jezero elevation: MOLA context + HiRISE 1 m playable region | Built by `terrain/*.py`, shipped as 16-bit PNG | Yes |
 | **Persistence** | Saving and restoring worlds, versions, sharing | Postgres + object storage | Later |
@@ -211,10 +211,10 @@ mars-sandbox/                  one repo, one version
 ├── build/                     compiled .wasm (generated)
 ├── web/                       the game page: app.html, png16.mjs, terrain/
 ├── test/                      validator, terrain, rover and smoke tests
-├── generate.py                CLI prompt → module (becomes the workshop server)
+├── generate.py                older CLI prompt → module loop (superseded by workshop/)
 └── (MVP adds)
     ├── runtime/               multi-module sandbox runtime, manifest loader, clock.mjs (world clock + diurnal lookup)
-    ├── workshop/              Node server: LLM, asc compile, smoke tests
+    ├── workshop/              Node (TypeScript) server: prompt from the shared files, Claude API, asc compile, smoke test, retry (W1)
     └── web/workshop/          the panel
 ```
 
@@ -275,7 +275,7 @@ gantt
     section MVP track
     R1 multi-module runtime       :done, 2026-11-10, 1d
     X1 generic host API + manifest:done, 2026-11-10, 1d
-    W1 workshop server            :2026-11-12, 1d
+    W1 workshop server            :done, 2026-11-11, 1d
     W2 workshop panel             :2026-11-13, 2d
     A1 acceptance prompts pass    :2026-11-15, 2d
 ```

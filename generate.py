@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 """
+Superseded by the workshop server (workshop/server.mts, `npm run workshop`), which
+runs the same loop as a service with the design agent's full prompt. Kept as the
+small CLI version.
+
 Player prompt -> AssemblyScript behavior -> compiled Wasm -> tested -> ready to hot-load.
 
     export ANTHROPIC_API_KEY=...        (or OPENAI_API_KEY with --provider openai)

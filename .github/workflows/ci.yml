@@ -18,5 +18,8 @@ jobs:
       # Fact bundles: schema, source resolution, dependency resolution, derived
       # records, and the committed facts/index.json must be current.
       - run: npm run facts:check
+      # Nothing that looks like an API key may be in a tracked file, and .env is never tracked.
+      - run: npm run check:secrets
+      - run: npm run typecheck
       - run: npm run build
       - run: npm test

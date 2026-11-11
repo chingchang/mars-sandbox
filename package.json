@@ -7,15 +7,23 @@
     "build": "./build.sh",
     "facts": "node facts/validate.mjs && node runtime/gen_fact_keys.mjs",
     "facts:check": "node facts/validate.mjs --check && node facts/derive/recompute.mjs && node runtime/gen_fact_keys.mjs --check",
-    "test": "npm run facts:check && node --test --test-timeout=30000 test/facts.test.mjs test/recompute.test.mjs test/terrain.test.mjs test/climatology.test.mjs test/runtime.test.mjs test/hostapi.test.mjs && node test/run.mjs",
-    "pack": "node pack.mjs"
+    "test": "npm run facts:check && npm run check:secrets && npm run typecheck && node --test --test-timeout=30000 test/facts.test.mjs test/recompute.test.mjs test/terrain.test.mjs test/climatology.test.mjs test/runtime.test.mjs test/hostapi.test.mjs test/workshop.test.mjs && node test/run.mjs",
+    "pack": "node pack.mjs",
+    "workshop": "node workshop/server.mts",
+    "typecheck": "tsc -p tsconfig.json",
+    "check:secrets": "node scripts/check_secrets.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/node": "22.20.5",
     "ajv": "^8.20.0",
     "assemblyscript": "^0.28.20",
-    "three": "^0.170.0"
+    "three": "^0.170.0",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0"
   }
 }
