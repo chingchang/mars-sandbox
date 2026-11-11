@@ -52,6 +52,18 @@ test("guard: bearer parsing, constant-time code match, the throttle window, the 
   assert.equal(DailyCap.reopensAt(day), "2026-11-12T00:00:00.000Z"); assert.match(cap.closedMessage(day), /closed for today.*2 model calls.*00:00 UTC, in about 1 hour/);
   assert.equal(cap.remaining(day + 31 * 60_000), 2, "the next UTC day starts the count over"); assert.equal(cap.used, 0);
   assert.throws(() => new DailyCap(0), /positive integer/); assert.throws(() => new DailyCap(1.5), /positive integer/);
+  // on disk: the count survives a new process (a stopped machine, a restart); a day change resets it; a bad file starts over; a missing directory fails at start
+  const dir = mkdtempSync(path.join(tmpdir(), "mars-cap-")), file = path.join(dir, "daily_cap.json");
+  try {
+    const a = new DailyCap(3, file); assert.equal(a.take(day), true); assert.equal(a.take(day), true);
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { day: "2026-11-11", used: 2 });
+    const b = new DailyCap(3, file); assert.equal(b.used, 2); assert.equal(b.remaining(day), 1, "a new instance picks up the day's count");
+    assert.equal(b.take(day), true); assert.equal(new DailyCap(3, file).remaining(day), 0, "and the cap holds across instances");
+    assert.equal(new DailyCap(3, file).remaining(day + 31 * 60_000), 3, "the next UTC day starts over"); assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { day: "2026-11-12", used: 0 });
+    writeFileSync(file, "{not json"); assert.equal(new DailyCap(3, file).used, 0, "a bad file is not trusted");
+    writeFileSync(file, JSON.stringify({ day: "2026-11-11", used: -4 })); assert.equal(new DailyCap(3, file).used, 0, "nor a negative count");
+    assert.throws(() => new DailyCap(3, path.join(dir, "missing", "daily_cap.json")), /cannot be written/, "a missing state directory (an unmounted volume) fails at start");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
   assert.ok(new ClosedError("x", "2026-11-12T00:00:00.000Z") instanceof Error);
 });
 
@@ -122,6 +134,21 @@ test("daily cap: the day's model calls close the workshop before the body is rea
     t = Date.UTC(2026, 10, 12, 0, 0, 1);
     r = await raw(port, "POST", "/workshop", json, BODY); assert.equal(r.status, 200, "open again the next UTC day"); assert.equal(calls.length, 4);
   } finally { server.close(); }
+  // with a state directory the count outlives the server: a second server (a restarted or woken machine) is still closed
+  const dir = mkdtempSync(path.join(tmpdir(), "mars-state-"));
+  try {
+    const first = createWorkshopServer({ llm: counting().llm, index, keys, build: fakeBuild, dailyCap: 1, stateDir: dir, now: () => t });
+    const p1 = await listen(first);
+    try { assert.equal((await raw(p1, "POST", "/workshop", json, BODY)).status, 200); assert.equal((await raw(p1, "POST", "/workshop", json, BODY)).status, 429); } finally { first.close(); }
+    const second = createWorkshopServer({ llm: counting().llm, index, keys, build: fakeBuild, dailyCap: 1, stateDir: dir, now: () => t });
+    const p2 = await listen(second);
+    try {
+      const r = await raw(p2, "POST", "/workshop", json, BODY); assert.equal(r.status, 429, "the new server read the day's count from disk"); assert.equal(r.json.code, "closed");
+      assert.equal((await raw(p2, "GET", "/health")).json.calls_today, 1);
+    } finally { second.close(); }
+    assert.equal(configFromEnv({ WORKSHOP_STATE_DIR: "/data" }).stateDir, "/data");
+    assert.throws(() => createWorkshopServer({ llm: counting().llm, index, keys, build: fakeBuild, stateDir: path.join(dir, "nope") }), /cannot be written/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("with the code present a non-listed Origin or Host is still refused, and /health tells a stranger only ok", async () => {

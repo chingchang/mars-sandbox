@@ -1,8 +1,11 @@
-# Fly.io: one always-on machine runs the Dockerfile (the packed client and the
-# workshop server in one process). The owner sets `app` to their app name; its
-# public host is <app>.fly.dev, and WORKSHOP_HOSTS / WORKSHOP_ORIGINS below must
-# be exactly that host and origin (the server refuses every other).
+# Fly.io: one machine runs the Dockerfile (the packed client and the workshop
+# server in one process). It stops when idle and wakes on the next request, so
+# an idle month costs only the stopped disk and the small volume; a request in
+# flight keeps it running. The owner sets `app` to their app name; its public
+# host is <app>.fly.dev, and WORKSHOP_HOSTS / WORKSHOP_ORIGINS below must be
+# exactly that host and origin (the server refuses every other).
 #
+# The volume, once:     fly volumes create mars_state --size 1   (the daily cap's count lives there, so a stop cannot reset it)
 # Secrets, never here:  fly secrets set ANTHROPIC_API_KEY=... WORKSHOP_ACCESS_CODE=... WORKSHOP_DAILY_CAP=50
 # Deploy by hand:       fly deploy          (CI deploys from main after the tests pass; see .github/workflows/ci.yml)
 # Take it offline:      fly scale count 0   (or fly secrets unset ANTHROPIC_API_KEY; the server then refuses to start)
@@ -16,6 +19,7 @@ primary_region = "iad"
   WORKSHOP_BIND = "0.0.0.0"
   WORKSHOP_PORT = "8787"
   WORKSHOP_STATIC = "dist"
+  WORKSHOP_STATE_DIR = "/data"
   WORKSHOP_HOSTS = "mars-sandbox.fly.dev"
   WORKSHOP_ORIGINS = "https://mars-sandbox.fly.dev"
   WORKSHOP_KEEPALIVE_S = "20"
@@ -24,10 +28,10 @@ primary_region = "iad"
 [http_service]
   internal_port = 8787
   force_https = true
-  # always on: the daily cap and the build queue live in the process
-  auto_stop_machines = "off"
+  # stop when idle, wake on the next request (a few seconds); the daily cap's count is on the volume
+  auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
   [http_service.concurrency]
     type = "requests"
     soft_limit = 20
@@ -40,6 +44,11 @@ primary_region = "iad"
     path = "/health"
     # the server answers only to its own host (WORKSHOP_HOSTS); the check must say so
     headers = { Host = "mars-sandbox.fly.dev" }
+
+# the daily cap's state file; one small volume, same region as the machine
+[mounts]
+  source = "mars_state"
+  destination = "/data"
 
 # the compiler can take a hostile source to several GB before its time limit cuts it (compile.mts);
 # 2 GB means the kernel ends that process and the machine restarts, instead of the box thrashing

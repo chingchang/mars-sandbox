@@ -3,6 +3,7 @@
 // request past these costs the owner's key, so they run before the body is read
 // or the model called. Pure, with the clock injected, so tests can turn the day.
 import { createHash, timingSafeEqual } from "node:crypto";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 
 /** The code from an `Authorization: Bearer <code>` header, or undefined. */
 export function bearer(header: string | string[] | undefined): string | undefined {
@@ -50,23 +51,45 @@ export class Throttle {
 
 export const DEFAULT_DAILY_CAP = 50;
 
-/** Model calls per UTC day. The count lives in the process: a restart starts the day over (the cap is conservative for that reason). */
+/**
+ * Model calls per UTC day. With a `file` the count survives a restart or a stopped machine
+ * (written on every change, atomically); without one it lives in the process and a restart
+ * starts the day over. The file's directory must exist: a missing mount fails at start, not
+ * silently in memory.
+ */
 export class DailyCap {
   readonly cap: number;
+  readonly file: string | undefined;
   #day = "";
   #used = 0;
-  constructor(cap = DEFAULT_DAILY_CAP) {
+  #warned = false;
+  constructor(cap = DEFAULT_DAILY_CAP, file?: string) {
     if (!Number.isInteger(cap) || cap < 1) throw new Error(`the daily cap must be a positive integer, not ${cap}`);
-    this.cap = cap;
+    this.cap = cap; this.file = file;
+    if (file) { this.#load(); this.#save(true); }
   }
   static day(now: number): string { return new Date(now).toISOString().slice(0, 10); }
   /** Next UTC midnight after `now`, as an ISO string. */
   static reopensAt(now: number): string { const d = new Date(now); d.setUTCHours(24, 0, 0, 0); return d.toISOString(); }
-  #roll(now: number): void { const d = DailyCap.day(now); if (d !== this.#day) { this.#day = d; this.#used = 0; } }
+  #load(): void {
+    let text: string;
+    try { text = readFileSync(this.file!, "utf8"); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return; throw new Error(`the daily cap state ${this.file} cannot be read: ${(e as Error).message}`); }
+    try { const j = JSON.parse(text); if (typeof j.day === "string" && Number.isInteger(j.used) && j.used >= 0) { this.#day = j.day; this.#used = j.used; return; } } catch {}
+    console.error(`workshop: the daily cap state ${this.file} is not what the server writes; starting the count over`);
+  }
+  #save(strict = false): void {
+    if (!this.file) return;
+    try { const tmp = this.file + ".tmp"; writeFileSync(tmp, JSON.stringify({ day: this.#day, used: this.#used })); renameSync(tmp, this.file); }
+    catch (e) {
+      if (strict) throw new Error(`the daily cap state ${this.file} cannot be written (does the state directory exist?): ${(e as Error).message}`);
+      if (!this.#warned) { this.#warned = true; console.error(`workshop: the daily cap state ${this.file} could not be written; counting in memory meanwhile: ${(e as Error).message}`); }
+    }
+  }
+  #roll(now: number): void { const d = DailyCap.day(now); if (d !== this.#day) { this.#day = d; this.#used = 0; this.#save(); } }
   get used(): number { return this.#used; }
   remaining(now: number): number { this.#roll(now); return Math.max(0, this.cap - this.#used); }
   /** Count one model call; false (and nothing counted) when the day's cap is used up. */
-  take(now: number): boolean { this.#roll(now); if (this.#used >= this.cap) return false; this.#used++; return true; }
+  take(now: number): boolean { this.#roll(now); if (this.#used >= this.cap) return false; this.#used++; this.#save(); return true; }
   /** What the page shows when the day is used up: plain words and when it reopens. */
   closedMessage(now: number): string {
     const at = DailyCap.reopensAt(now), hours = Math.max(1, Math.round((Date.parse(at) - now) / 3_600_000));

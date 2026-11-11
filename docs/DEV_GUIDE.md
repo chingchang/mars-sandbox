@@ -51,7 +51,7 @@ Three things to hold onto:
 | **Host API** | The fixed list of functions a module may call: read environment, request movement, spawn shapes, set state, emit signals | Defined in `behaviors/host.ts`, implemented in the runtime, documented in `docs/HOST_API.md` | Yes: rover calls plus the generic calls (X1) |
 | **Module** | A compiled Wasm program the player (via the LLM) created: a behavior, a device, a creature, a structure | Inside one worker | Yes, four hand-written samples |
 | **Manifest** | JSON beside each module: name, description, declared state slots, declared signals, author, version, fact ids | Stored with the module; schema in `runtime/manifest.schema.json` | Yes (X1); the inspector in the page renders it (W2) |
-| **Workshop server** | Small HTTP service: holds the LLM key, builds the prompt from the host API and `facts/index.json`, calls the LLM, compiles AssemblyScript to Wasm with `asc`, runs the smoke tests, returns the artifact; in production it also serves the page and stands behind an access code and a daily cap | A Node process: on the laptop locally; one always-on container on Fly.io in production (§11) | Yes (W1): `workshop/`, `npm run workshop`; S1 adds `Dockerfile`, `fly.toml`; `generate.py` is the older CLI version |
+| **Workshop server** | Small HTTP service: holds the LLM key, builds the prompt from the host API and `facts/index.json`, calls the LLM, compiles AssemblyScript to Wasm with `asc`, runs the smoke tests, returns the artifact; in production it also serves the page and stands behind an access code and a daily cap | A Node process: on the laptop locally; one container on Fly.io in production, stopped when idle (§11) | Yes (W1): `workshop/`, `npm run workshop`; S1 adds `Dockerfile`, `fly.toml`; `generate.py` is the older CLI version |
 | **Facts layer** | Sourced, tiered Mars data: `facts/*.json` validated into `facts/index.json` | Build-time; the index ships with the client and the server | Yes |
 | **Terrain** | Real Jezero elevation: MOLA context + HiRISE 1 m playable region | Built by `terrain/*.py`, shipped as 16-bit PNG | Yes |
 | **Persistence** | Saving and restoring worlds, versions, sharing | Postgres + object storage | Later |
@@ -237,7 +237,7 @@ mars-sandbox/                  one repo, one version
 | LLM | Anthropic API via the server | Structured output, long context for host API + facts | Provider abstraction if we want to compare models |
 | Facts | JSON + JSON Schema + Node validator in CI | Reviewable in a PR; diffable; no database needed yet | |
 | Data processing | Python (numpy, Pillow, tifffile) | PDS archives are easiest from Python | |
-| Hosting | One container (`Dockerfile`) on Fly.io: the packed client and the workshop server in one process, always on | A serverless function cannot hold a request that waits minutes for the model, runs the compiler and the smoke test in child processes and keeps one build queue and one daily counter per deployment (§11) | A CDN for the client if it ever needs one (`WORKSHOP_URL` already supports a separate host); per-room servers later |
+| Hosting | One container (`Dockerfile`) on Fly.io: the packed client and the workshop server in one process, stopped when idle | A serverless function cannot hold a request that waits minutes for the model, runs the compiler and the smoke test in child processes and keeps one build queue and one daily counter per deployment (§11) | A CDN for the client if it ever needs one (`WORKSHOP_URL` already supports a separate host); per-room servers later |
 | Persistence | none yet (world lives in the page) | MVP does not need it | Postgres + S3-compatible storage |
 
 What the MVP deliberately does **not** include: physics primitives, the
@@ -307,7 +307,7 @@ model calls. The key never leaves the host's environment.
 flowchart LR
     B["Browser<br/>(any device)"] -->|"GET /  (page, workers, terrain, facts)"| C
     B -->|"POST /workshop + access code"| C
-    subgraph C["One container on Fly.io (always on)"]
+    subgraph C["One container on Fly.io (stops when idle, wakes on a request)"]
         S["workshop/server.mts<br/>static dist/ + /workshop + /health"]
         G["guards: code, throttle, daily cap"]
         Q["build queue (one at a time)<br/>asc compile + smoke test"]
@@ -333,11 +333,16 @@ instance, not per deployment; and the CPU is shared, which is exactly the
 noise the 2 ms budget was measured to be sensitive to. Weakening the smoke
 test or the budget to fit a host is ruled out by the sandbox guarantees.
 
-The smallest thing that fits is one always-on container with the whole
-repo's toolchain in it, so that is what `Dockerfile` and `fly.toml` build:
-Fly.io, one shared-CPU machine with 2 GB (a hostile source can take the
-compiler to several GB before its 20 s limit; at 2 GB the kernel ends that
-process and the machine restarts instead of thrashing). Any host that runs a
+The smallest thing that fits is one container with the whole repo's
+toolchain in it, so that is what `Dockerfile` and `fly.toml` build: Fly.io,
+one shared-CPU machine with 2 GB (a hostile source can take the compiler to
+several GB before its 20 s limit; at 2 GB the kernel ends that process and
+the machine restarts instead of thrashing). The machine stops when it has had
+no connections for a while and starts on the next request, in a few seconds;
+a request in flight keeps it up (the keepalive bytes count as activity).
+Billing is per second while it runs, so an idle month costs the stopped disk
+and the volume, cents; the day's model-call count lives on that volume
+(`WORKSHOP_STATE_DIR`), so a stop cannot reset it. Any host that runs a
 Dockerfile with environment variables works the same way (Render, Railway).
 The client is served by the same process so the page talks to its own origin:
 no CORS, a `connect-src 'self'` policy, one host to protect. `WORKSHOP_URL`
@@ -362,8 +367,11 @@ Checked in this order, before the body is read or the model called:
    retries inside one request included): past it the server answers 429
    `closed` and the page shows "the workshop is closed for today" with when it
    reopens, as a next step; the samples still load and built objects keep
-   running. The count lives in the process: a restart or a deploy starts the
-   day over, which is why the default is conservative.
+   running. The count is written to `WORKSHOP_STATE_DIR/daily_cap.json` on
+   every change, so a restart, a deploy or a stopped machine carries the day's
+   count over; without a state directory (locally) it lives in the process.
+   The throttle's wrong-code counts do live in the process and start over on
+   a restart; that only makes the throttle lenient for a moment.
 4. `/health` says `{ ok: true }` to any caller on the served host (the
    host's health check sends that Host header; `fly.toml`) and its details
    only with the code.
@@ -395,6 +403,7 @@ responses.
 | `ANTHROPIC_API_KEY` | secret | The model key. Read by the server only; never in the repo, the image, the page or a log. |
 | `WORKSHOP_ACCESS_CODE` | secret | The shared code players type once. Required before `WORKSHOP_BIND` can be anything but loopback. |
 | `WORKSHOP_DAILY_CAP` | secret or env | Model calls per UTC day (default 50). |
+| `WORKSHOP_STATE_DIR` | `fly.toml` | `/data`, the mounted volume the day's count is kept on. Must exist. |
 | `WORKSHOP_HOSTS` / `WORKSHOP_ORIGINS` | `fly.toml` | Exactly the deployed host and origin (`<app>.fly.dev`, `https://<app>.fly.dev`). |
 | `WORKSHOP_BIND` / `WORKSHOP_PORT` | `fly.toml` | `0.0.0.0` / `8787` in the container; `127.0.0.1` locally. |
 | `WORKSHOP_STATIC` | `fly.toml` | `dist`: serve the packed page from the same process. |
@@ -409,9 +418,11 @@ responses.
 
 Setting up (the owner, once): create the Fly app (`fly launch --no-deploy`
 from the repo, or set `app` in `fly.toml` to an existing app), set the two
-host values in `fly.toml` to the app's host, then
+host values and the health check's `Host` in `fly.toml` to the app's host,
+create the volume the day's count lives on, and set the secrets:
 
 ```
+fly volumes create mars_state --size 1
 fly secrets set ANTHROPIC_API_KEY=... WORKSHOP_ACCESS_CODE=... WORKSHOP_DAILY_CAP=50
 ```
 
@@ -430,11 +441,21 @@ console. Rotating the access code: `fly secrets set WORKSHOP_ACCESS_CODE=...`;
 every player is asked for the new code on their next message (a kept code the
 server refuses is forgotten by the page).
 
-Taking the workshop offline quickly: `fly scale count 0` stops the machine
-(the URL stops answering); `fly secrets unset ANTHROPIC_API_KEY` makes the
+Taking the workshop offline quickly: `fly scale count 0` removes the machine
+(the URL stops answering; with a volume, add `--max-per-region 1` when
+scaling back to 1); `fly secrets unset ANTHROPIC_API_KEY` makes the
 server refuse to start (the page stays up until the next restart, the
 workshop answers with an error); `fly secrets set WORKSHOP_DAILY_CAP=1` leaves
 the page up with the workshop closing after one call. Back: the reverse.
+
+### What idling costs
+
+The machine is billed per second while it runs (about $12.70 a month if it
+never stopped, at Fly's published rate for a shared CPU with 2 GB in
+Ashburn when this was written). Stopped, only its root disk is billed, at
+$0.15 per GB a month, plus the 1 GB volume at the same rate: an idle month
+is under a dollar. The model spend is separate, billed by Anthropic, and
+bounded by the daily cap.
 
 ### Measured
 

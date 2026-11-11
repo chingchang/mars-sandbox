@@ -130,8 +130,9 @@ why. Do not special-case any prompt in code.
 
 ### S1. Deploy to a production site (requested by the owner on 2026-11-11, issue 18)
 A URL the owner can open from any device: the packed page and the workshop
-server in one always-on container (Fly.io, `Dockerfile`, `fly.toml`), the key
-only in the host's environment, an access code the player types once, a
+server in one container that stops when idle (Fly.io, `Dockerfile`,
+`fly.toml`, the day's model-call count on a small volume), the key only in
+the host's environment, an access code the player types once, a
 throttle on wrong codes, a daily cap on model calls (default 50), Host and
 Origin pinned to the deployed site, `/health` saying only ok to strangers, a
 Content-Security-Policy on the page that keeps player modules sandboxed, and a

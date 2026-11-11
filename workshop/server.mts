@@ -103,8 +103,8 @@ export type ServerOptions = {
   llm: Llm; model?: string; origins?: string[]; hosts?: string[]; queue?: BuildQueue;
   /** The shared secret players type once; unset means local only (no guard, full /health). */
   accessCode?: string;
-  /** Model calls per UTC day (DEFAULT_DAILY_CAP), or a DailyCap of the test's own. */
-  dailyCap?: number; cap?: DailyCap; throttle?: Throttle;
+  /** Model calls per UTC day (DEFAULT_DAILY_CAP), or a DailyCap of the test's own; `stateDir` keeps the count on disk across restarts. */
+  dailyCap?: number; cap?: DailyCap; stateDir?: string; throttle?: Throttle;
   /** The clock, for tests that turn the day over. */
   now?: () => number;
   /** Serve the packed client from this directory; `staticConnect` adds origins to the page's connect-src. */
@@ -128,7 +128,7 @@ export type ServerOptions = {
  * model being called, and /health keeps answering throughout.
  */
 export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [], hosts = [], index = readIndex(), keys = readKeys(), build, queue = buildQueue,
-  accessCode, dailyCap = DEFAULT_DAILY_CAP, cap = new DailyCap(dailyCap), throttle = new Throttle(), now: clock = Date.now,
+  accessCode, dailyCap = DEFAULT_DAILY_CAP, stateDir, cap = new DailyCap(dailyCap, stateDir ? path.join(stateDir, "daily_cap.json") : undefined), throttle = new Throttle(), now: clock = Date.now,
   staticDir, staticConnect = [], keepaliveMs = 0, trustProxy = false }: ServerOptions) {
   const system = buildSystemPrompt({ index, keys });            // assembled once; the files it reads are part of the commit
   const systemSha256 = createHash("sha256").update(system).digest("hex");
@@ -206,7 +206,7 @@ export function loadEnv(root = ROOT) {
   if (existsSync(file)) process.loadEnvFile(file);              // values already in the environment win
 }
 
-export type EnvConfig = { bind: string; port: number; model: string; origins: string[]; hosts: string[]; accessCode?: string; dailyCap: number; keepaliveMs: number; staticDir?: string; staticConnect: string[]; trustProxy: boolean };
+export type EnvConfig = { bind: string; port: number; model: string; origins: string[]; hosts: string[]; accessCode?: string; dailyCap: number; stateDir?: string; keepaliveMs: number; staticDir?: string; staticConnect: string[]; trustProxy: boolean };
 
 /**
  * The server's configuration from the environment (see .env.example). Refuses a listen
@@ -223,19 +223,22 @@ export function configFromEnv(env: Record<string, string | undefined> = process.
   new DailyCap(dailyCap);                                         // validates (a positive integer) before anything listens
   const keepaliveMs = Math.max(0, Number(env.WORKSHOP_KEEPALIVE_S) || 0) * 1000;
   const staticDir = env.WORKSHOP_STATIC ? path.resolve(ROOT, env.WORKSHOP_STATIC) : undefined;
+  const stateDir = env.WORKSHOP_STATE_DIR ? path.resolve(ROOT, env.WORKSHOP_STATE_DIR) : undefined;
   const staticConnect: string[] = [];
   for (const u of list(env.WORKSHOP_URL)) { try { staticConnect.push(new URL(u).origin); } catch { throw new Error(`WORKSHOP_URL is not a URL: ${u}`); } }
   return { bind, port: Number(env.WORKSHOP_PORT) || DEFAULT_PORT, model: env.WORKSHOP_MODEL || DEFAULT_MODEL, origins: list(env.WORKSHOP_ORIGINS), hosts: list(env.WORKSHOP_HOSTS),
-    accessCode, dailyCap, keepaliveMs, staticDir, staticConnect, trustProxy: env.WORKSHOP_TRUST_PROXY === "1" };
+    accessCode, dailyCap, stateDir, keepaliveMs, staticDir, staticConnect, trustProxy: env.WORKSHOP_TRUST_PROXY === "1" };
 }
 
 export function main() {
   loadEnv();
   let cfg: EnvConfig, llm: Llm;
   try { cfg = configFromEnv(); llm = anthropicLlm({ model: cfg.model }); } catch (e) { console.error(`workshop: ${(e as Error).message}`); process.exit(2); }
-  const { bind, port, model, accessCode, dailyCap, staticDir, keepaliveMs, ...rest } = cfg;
-  createWorkshopServer({ llm, model, accessCode, dailyCap, staticDir, keepaliveMs, ...rest }).listen(port, bind, () => {
-    console.log(`workshop: listening on http://${bind}:${port} (model ${model}; access code ${accessCode ? "set" : "not set, local pages only"}; ${dailyCap} model calls a day; static ${staticDir ?? "off"}; keepalive ${keepaliveMs ? keepaliveMs / 1000 + " s" : "off"}; key from the environment, never sent to the page)`);
+  const { bind, port, model, accessCode, dailyCap, stateDir, staticDir, keepaliveMs, ...rest } = cfg;
+  let server: ReturnType<typeof createWorkshopServer>;
+  try { server = createWorkshopServer({ llm, model, accessCode, dailyCap, stateDir, staticDir, keepaliveMs, ...rest }); } catch (e) { console.error(`workshop: ${(e as Error).message}`); process.exit(2); }
+  server.listen(port, bind, () => {
+    console.log(`workshop: listening on http://${bind}:${port} (model ${model}; access code ${accessCode ? "set" : "not set, local pages only"}; ${dailyCap} model calls a day, counted ${stateDir ? "in " + stateDir : "in memory"}; static ${staticDir ?? "off"}; keepalive ${keepaliveMs ? keepaliveMs / 1000 + " s" : "off"}; key from the environment, never sent to the page)`);
   });
 }
 

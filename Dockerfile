@@ -17,8 +17,9 @@ COPY package.json package-lock.json ./
 # the server needs only the SDK and the AssemblyScript compiler at run time
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app /app
-# the compiler and the smoke test run as this user, not root
-USER node
 ENV WORKSHOP_BIND=0.0.0.0 WORKSHOP_PORT=8787 WORKSHOP_STATIC=dist
 EXPOSE 8787
+# the entry point hands a mounted state volume to `node` and runs the server as that user: the
+# compiler and the smoke test never run as root
+ENTRYPOINT ["/app/scripts/container_start.sh"]
 CMD ["node", "workshop/server.mts"]
