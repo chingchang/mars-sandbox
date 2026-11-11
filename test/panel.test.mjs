@@ -68,7 +68,7 @@ before(async () => {
   });
   page.on("pageerror", e => errors.push(String(e))); page.on("console", m => { console_.push(m.type() + ": " + m.text()); if (m.type() === "error") errors.push(m.text()); });
   page.on("requestfailed", r => console_.push("requestfailed " + r.url() + " " + r.failure()?.errorText));
-  if (process.env.PANEL_CPU_THROTTLE) await page.emulateCPUThrottling(Number(process.env.PANEL_CPU_THROTTLE));   // PANEL_CPU_THROTTLE=4 approximates a small 2-core machine
+  if (process.env.PANEL_CPU_THROTTLE) await page.emulateCPUThrottling(Number(process.env.PANEL_CPU_THROTTLE));   // slows the page's main thread only; it does not stand in for a small machine (see PANEL_BUDGET_MS)
   await page.goto(`http://localhost:${pagePort}/index.html?terrain=procedural&fx=low&workshop=http://127.0.0.1:1`, { waitUntil: "load" });
   await page.waitForFunction(() => window.sandbox && window.sandbox.workshop, { timeout: 120000 });
 });

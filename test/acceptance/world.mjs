@@ -10,6 +10,8 @@ import { readFileSync } from "node:fs";
 const INDEX = JSON.parse(readFileSync(new URL("../../facts/index.json", import.meta.url), "utf8"));
 const KEYS = JSON.parse(readFileSync(new URL("../../runtime/fact_keys.json", import.meta.url), "utf8"));
 const AIR = INDEX.facts["jezero.temperature.my36_air_hourly_mean"].value;
+/** The index's facts, for checks that pick fact ids to vary. */
+export function indexInfo() { return { facts: INDEX.facts }; }
 const MAX_SPEED = 2.6, TURN = 1.25;                      // web/app.html stepObject()
 let spawnerPromise = null;
 const spawner = () => (spawnerPromise ??= nodeSpawner(new URL("../../runtime/worker.mjs", import.meta.url)));

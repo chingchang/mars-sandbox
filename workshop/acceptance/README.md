@@ -2,21 +2,33 @@
 
 The five prompts from `facts/AGENT_BRIEF.md` (A1), run from a cold start against the
 real model with `npm run acceptance` (one prompt: `-- --prompt N`; scripted player
-answers: `-- --answers file.json`). Each run starts a fresh workshop server and a new
-conversation; the player's answers are typed at the terminal. A transcript records the
-messages as sent, every server answer (manifest, source, explanation, smoke-test report,
-tries, per-try log, module bytes and their hash), the system prompt's hash and the model
-id from `/health`, the fact ids cited in the agent's questions, and any Mars number that
-appears without a fact id nearby. Nothing is edited after the fact.
+answers: `-- --answers file.json`, `{ "2": ["first answer", ...] }`). Each run starts a
+fresh workshop server (a child process, so the system prompt is rebuilt from the files)
+and a new conversation; the player's answers are typed at the terminal.
 
-Behaviour is judged offline by `test/acceptance/behaviour.mjs` (the real registry and
-worker, synthetic sensors), one check per prompt; `npm test` runs those checks against
-the samples and fixtures so the checks themselves are tested.
+Every run is written to a new file, `N-<prompt words>-<UTC timestamp>.json`, never
+overwriting an earlier run, and even when the run throws (the error is recorded). A
+transcript holds the messages as sent, every server answer (manifest, source,
+explanation, smoke-test report, tries, the per-try log with each try's source and
+manifest text, module bytes and their sha256), the system prompt's sha256 and the model
+id from `/health`, the git commit and whether the tree was clean, the fact ids cited in
+each question (brackets count; ids written with other punctuation are recorded apart),
+and the numbers that appear without a fact id right after them, in the questions, the
+explanation, the manifest text and the source comments (a reviewer's aid, not a verdict).
+After a declined or failed answer the operator may send one more message in the same
+conversation; that turn is recorded too. Nothing is edited after the fact.
+
+Judging is offline and rerunnable: `node test/acceptance/judge.mjs` (also part of
+`npm test`) rebuilds each transcript's source with the workshop's compile and smoke test,
+compares the hash with the recorded module, loads it through the registry and runs the
+prompt's behaviour check from `test/acceptance/behaviour.mjs`, printing the evidence. A
+pass needs the check, at most two tries, and a fact-grounded question before the build.
 
 ## Results
 
-Not run yet: this machine has no `ANTHROPIC_API_KEY`. The table below is filled in
-once the runs exist.
+Not run yet: this machine has no `ANTHROPIC_API_KEY`. The table below is filled in from
+the judge's output once the runs exist, naming the set of transcripts (one system prompt
+hash) that is the final one.
 
 | # | Prompt | Result | Tries | Fact-grounded question | Behaviour check |
 |---|--------|--------|-------|------------------------|-----------------|
