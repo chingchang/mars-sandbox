@@ -2,6 +2,7 @@
 // far, get back questions for the player or a tested module. The API key
 // lives here and never reaches the browser. Run with `npm run workshop`.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -73,6 +74,7 @@ export type ServerOptions = { llm: Llm; model?: string; origins?: string[]; host
  */
 export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [], hosts = [], index = readIndex(), keys = readKeys(), build, queue = buildQueue }: ServerOptions) {
   const system = buildSystemPrompt({ index, keys });            // assembled once; the files it reads are part of the commit
+  const systemSha256 = createHash("sha256").update(system).digest("hex");
   const facts = liveFactIds(index).length;
   let admitted = 0;                                              // requests in flight; each holds at most one build at a time
   const doBuild = build ?? ((src: string) => compileAndTest(src, ROOT, {}, queue));   // compileAndTest queues itself; a custom build is the caller's business
@@ -85,7 +87,7 @@ export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [],
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     try {
       if (req.method === "OPTIONS") return send(res, 204, {}, cors);
-      if (req.method === "GET" && pathname === "/health") return send(res, 200, { ok: true, model, facts, system_bytes: system.length, in_flight: admitted, building: queue.running }, cors);
+      if (req.method === "GET" && pathname === "/health") return send(res, 200, { ok: true, model, facts, system_bytes: system.length, system_sha256: systemSha256, in_flight: admitted, building: queue.running }, cors);
       if (pathname !== "/workshop") return send(res, 404, { error: "not found; POST /workshop" }, cors);
       if (req.method !== "POST") return send(res, 405, { error: "POST /workshop" }, cors);
       const type = (req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
