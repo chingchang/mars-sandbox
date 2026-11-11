@@ -210,9 +210,10 @@ test("tick budget: the smoke test applies the runtime's rules; one paused tick p
   assert.equal(one.ok, true); assert.equal(one.worst, 6); assert.equal(one.over, 1); assert.equal(one.strikes, 1);
   const killed = tickVerdict([...quiet.slice(0, 300), 500, ...quiet.slice(300)]);
   assert.equal(killed.ok, false, "one tick over the watchdog is fatal even though the mean (1.33 ms) and the strikes (1) are fine");
-  assert.equal(killed.reason, "a tick took 500 ms; the world stops a module whose tick does not return within 400 ms");
+  assert.equal(killed.reason, "a tick took 500.0 ms; the world stops a module whose tick does not return within 400 ms");
   assert.equal(tickVerdict([...quiet, 400]).ok, true, "exactly the watchdog is not over it (mean 1.17 ms)");
-  assert.match(tickVerdict([...quiet, 400.5]).reason, /^a tick took 401 ms/);
+  assert.match(tickVerdict([...quiet, 400.5]).reason, /^a tick took 400\.5 ms/);
+  assert.match(tickVerdict([...quiet, 400.0001]).reason, /^a tick took 400\.0 ms; the world stops a module whose tick does not return within 400 ms/, "one decimal, no 400-vs-400 contradiction");
   const three = tickVerdict([...quiet.slice(0, 100), 2.1, 2.2, 2.3, ...quiet.slice(103)]);
   assert.equal(three.ok, false); assert.match(three.reason, /^3 ticks in a row over 2 ms/); assert.equal(three.over, 3);
   const spaced = tickVerdict([0.5, 2.1, 2.2, 0.5, 2.1, 2.2, 0.5]);
@@ -230,10 +231,16 @@ test("tick budget: the smoke test applies the runtime's rules; one paused tick p
   const t0 = Date.now();
   const long = await compileAndTest(LONG_TICK_SRC);
   assert.equal(long.ok, false); assert.match(long.error, /^TEST FAILURE:/);
-  assert.match(long.error, /tick\(\) over budget: a tick took \d+ ms; the world stops a module whose tick does not return within 400 ms/);
+  assert.match(long.error, /tick\(\) over budget: a tick took \d+\.\d ms; the world stops a module whose tick does not return within 400 ms/);
   assert.ok(Date.now() - t0 < 10000, "the smoke test stopped at the long tick instead of running all 600");
   const ok = await compileAndTest(STATION_SRC);
   assert.ok(ok.ok); assert.match(ok.report, /^ok: 600 ticks, \d+ actuator calls, worst tick [0-9.]+ ms, \d+ over the 2 ms budget \(3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail\)/);
+  // a module that calls an actuator more often per tick than the world keeps is refused, with the cap named
+  const flood = await compileAndTest(read("behaviors/flood.ts"));
+  assert.equal(flood.ok, false); assert.match(flood.error, /^TEST FAILURE:/); assert.match(flood.error, /over the per-tick cap: called (pose|state_set|mem_set) 1000 times in one tick; the world keeps at most (32|16|64) \(one per (shape handle|state slot|memory slot)\)/);
+  const spam = 'import { spawn } from "./host";\nexport function init(): void {}\nexport function tick(dt: f32): void { for (let i = 0; i < 5000; i++) spawn(0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5); }\n';
+  const s = await compileAndTest(spam);
+  assert.equal(s.ok, false); assert.match(s.error, /called spawn 5000 times in one tick; the world keeps at most 32 \(one per shape handle\)/);
 });
 
 test("HTTP: a second Host header is refused; a busy queue reached from outside the admission count is a 503", async () => {
