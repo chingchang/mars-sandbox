@@ -29,14 +29,41 @@ is reported for the reviewer. Results are counted per system prompt hash.
 
 ## Results
 
-Not run yet: this machine has no `ANTHROPIC_API_KEY`. The table below is filled in from
-the judge's output once the runs exist, naming the set of transcripts (one system prompt
-hash) that is the final one.
+Final set: system prompt `3cc2a5f6…` (sha256 `3cc2a5f65e70` prefix in the transcripts), model
+`claude-opus-5-5`, git `f570f5f`, run 2026-11-11 20:21 to 20:30 UTC, the player's answers typed by
+the operator. Judged with `node test/acceptance/judge.mjs`; the full evidence is in its output.
 
-| # | Prompt | Result | Tries | Fact-grounded question | Behaviour check |
-|---|--------|--------|-------|------------------------|-----------------|
-| 1 | weather station | not run | | | |
-| 2 | beacon | not run | | | |
-| 3 | solar panel | not run | | | |
-| 4 | creature | not run | | | |
-| 5 | dust gauge | not run | | | |
+| # | Prompt | Transcript | Result | Tries | Fact-grounded question | Behaviour check |
+|---|--------|-----------|--------|-------|------------------------|-----------------|
+| 1 | weather station | `1-…-20261111T202157Z.json` | **pass** | 1 | yes: threshold vs the measured nightly low, air vs ground, Mars hours (5 ids) | hourly logs; flag up at 5 h and 1.5 h, down at 7.5 h and 14 h |
+| 2 | beacon | `2-…-20261111T202338Z.json` | **pass** | 1 | yes: power through the night, visibility through dust (5 ids) | lit at 19 and 15 m, dark at 21 and 30 m, brighter and a slot at 1 |
+| 3 | solar panel | `3-…-20261111T202557Z.json` | **reviewer** (judge: fail) | 2 | yes: which season's sunlight, dust, one axis or two (9 ids) | output 196 W at noon, 0 at midnight; it tracks in pitch (hinge along the forward axis, yaw fixed at a quarter turn), so the yaw rule fails while the settled pitch sweeps −2.75 → −0.39 rad from 7.5 h to 16.5 h |
+| 4 | creature | `4-…-20261111T202836Z.json` | **pass** | 1 | yes: surviving the night, what it runs on (6 ids) | wanders, reacts to the rover, stops after 7 s with a rock 0.05 m off the line in 10 of 10 samples; control not occluded |
+| 5 | dust gauge | `5-…-20261111T203017Z.json` | **pass** | 1 | yes: haze vs grime, which record, dust devils (3 ids) | grime cover ×4.00 when the tau fact is raised fourfold; the haze slot is a labelled copy of tau |
+
+Prompt 1 is reported apart from 2 to 5 because the weather station is also the one example in the
+system prompt: 4 of 4 among prompts 2 to 5 built a working object within two tries after a
+fact-grounded question, with prompt 3 passing every condition except the yaw rule, which the
+reviewer rules on; prompt 1 passed as well.
+
+Prompt 3's first try failed the manifest check (a state entry outside the schema), not the build;
+the second try passed. No run hit a 422 or a `failed`.
+
+Earlier attempts, kept as recorded:
+
+- `…T200842Z` (prompt 1) and `…T200959Z` (prompt 2), system prompt `9c0a54d2…` at git `4eb4844`:
+  both built in one try without asking a question, which the brief counts as a fail. The prompt
+  was then tuned to always ask once before the first build.
+- `…T201229Z` (prompt 1) and `…T201416Z` (prompt 2), the tuned prompt at git `4eb4844`: both pass.
+- `…T201938Z` (prompt 3), the tuned prompt at git `4eb4844`: the model's build reply was cut off
+  at the 16000-token output limit (its thinking counts against it), recorded as `error 502`. The
+  operator sent one more message in the same conversation and the panel was built in one try on
+  that turn (the stale error turn did not hurt). The limit was raised to 32000 in `workshop/llm.mts`
+  (git `f570f5f`) and all five prompts were run again from a cold start on that commit.
+
+`git_clean` is false in the final transcripts because the earlier transcripts were untracked in
+the working tree at run time; the code at `f570f5f` was clean.
+
+The number scanner flags numbers whose fact id precedes rather than follows them (for example
+"[id]. That curve runs from about 195 K…"), the player's own numbers (−70 C, 20 m, 25 %), the
+page's 240 s sol, and the kelvin offset; the reviewer reads every transcript in full.

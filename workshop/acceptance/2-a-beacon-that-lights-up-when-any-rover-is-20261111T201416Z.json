@@ -1,0 +1,240 @@
+{
+ "prompt_number": 2,
+ "prompt": "A beacon that lights up when any rover is within 20 metres.",
+ "started": "2026-11-11T20:12:47.101Z",
+ "git_head": "4eb4844960d109f1ade4e6a4479f68e60a4e1026",
+ "git_clean": false,
+ "turns": [
+  {
+   "request_messages": [
+    {
+     "role": "user",
+     "content": "A beacon that lights up when any rover is within 20 metres."
+    }
+   ],
+   "status": 200,
+   "answer": {
+    "type": "questions",
+    "text": "Happy to build this beacon. Two choices are still open, and Mars has an opinion on each.\n\n**1. What powers it, and should it work at night?**\nSunlight at Mars is much weaker than at Earth. Above the atmosphere it is about 586 W/m², against 1361 W/m² at Earth [mars.solar.constant_mean] [sun.solar_constant_1au].\n\n- **Dust cuts that further.** In the clear season the dust optical depth at Jezero is around 0.4 [jezero.dust.optical_depth_background_my36]. The January 2022 regional storm pushed it to about 2 [jezero.dust.optical_depth_storm_jan2022].\n- **Option A: solar panel only.** The beacon lights up for rovers during the day and goes dark at night.\n- **Option B: a battery it charges by day.** It works around the clock. The battery size would be your assumption, since the index doesn't give one.\n- **Option C: something else.** You might have another power source in mind.\n\n**2. How does it handle the cold?**\nOn a typical night at Jezero the air drops to about 193 K, roughly −80 °C [jezero.temperature.my36_air_diurnal_min]. The beacon can read the current air temperature as it runs. So it could:\n\n- keep a heater running, and show it working when it's cold,\n- dim or switch off below a temperature you pick, or\n- ignore the cold entirely, as a labelled assumption that it's built to take it.\n\n**Already settled:** The 20 m range is your number, and the build will be labelled that way. \"Any rover\" works as you'd hope: the beacon checks the distance to whichever rover is closest. It also needs no colour decision yet, but tell me if you want a particular one.",
+    "tries": 1
+   },
+   "at": "2026-11-11T20:13:02.709Z",
+   "after_failure": false
+  },
+  {
+   "request_messages": [
+    {
+     "role": "user",
+     "content": "A beacon that lights up when any rover is within 20 metres."
+    },
+    {
+     "role": "assistant",
+     "content": "Happy to build this beacon. Two choices are still open, and Mars has an opinion on each.\n\n**1. What powers it, and should it work at night?**\nSunlight at Mars is much weaker than at Earth. Above the atmosphere it is about 586 W/m², against 1361 W/m² at Earth [mars.solar.constant_mean] [sun.solar_constant_1au].\n\n- **Dust cuts that further.** In the clear season the dust optical depth at Jezero is around 0.4 [jezero.dust.optical_depth_background_my36]. The January 2022 regional storm pushed it to about 2 [jezero.dust.optical_depth_storm_jan2022].\n- **Option A: solar panel only.** The beacon lights up for rovers during the day and goes dark at night.\n- **Option B: a battery it charges by day.** It works around the clock. The battery size would be your assumption, since the index doesn't give one.\n- **Option C: something else.** You might have another power source in mind.\n\n**2. How does it handle the cold?**\nOn a typical night at Jezero the air drops to about 193 K, roughly −80 °C [jezero.temperature.my36_air_diurnal_min]. The beacon can read the current air temperature as it runs. So it could:\n\n- keep a heater running, and show it working when it's cold,\n- dim or switch off below a temperature you pick, or\n- ignore the cold entirely, as a labelled assumption that it's built to take it.\n\n**Already settled:** The 20 m range is your number, and the build will be labelled that way. \"Any rover\" works as you'd hope: the beacon checks the distance to whichever rover is closest. It also needs no colour decision yet, but tell me if you want a particular one."
+    },
+    {
+     "role": "user",
+     "content": "Battery charged by day so it works around the clock; make the battery size a labelled assumption, nothing fancy. Treat the cold as something it is built to take, labelled as my assumption. Amber lamp when lit, dark otherwise."
+    }
+   ],
+   "status": 200,
+   "answer": {
+    "type": "module",
+    "name": "proximity_beacon",
+    "manifest": {
+     "name": "proximity beacon",
+     "description": "A mast with a small solar panel and a battery. It lights an amber lamp while any rover is within 20 m, day or night. It charges by day and spends energy only while lit. The battery, panel, lamp and daylight window are the player's assumptions.",
+     "version": 1,
+     "author": "design agent",
+     "state": [
+      {
+       "slot": 0,
+       "label": "battery charge (assumed 200 Wh pack)",
+       "unit": "Wh"
+      },
+      {
+       "slot": 1,
+       "label": "distance to nearest rover (-1 = none)",
+       "unit": "m"
+      },
+      {
+       "slot": 2,
+       "label": "lamp lit",
+       "unit": "flag"
+      },
+      {
+       "slot": 3,
+       "label": "charging (assumed daylight 06-18 h)",
+       "unit": "flag"
+      }
+     ],
+     "signals": {
+      "emits": [
+       {
+        "code": 200,
+        "label": "beacon lit (1) or dark (0)",
+        "unit": "flag"
+       }
+      ]
+     },
+     "shapes": 4,
+     "fact_ids": [
+      "mars.time.sol",
+      "mars.solar.constant_mean",
+      "sun.solar_constant_1au",
+      "jezero.dust.optical_depth_background_my36",
+      "jezero.dust.optical_depth_storm_jan2022",
+      "jezero.temperature.my36_air_diurnal_min"
+     ],
+     "did_you_know": {
+      "text": "Above the atmosphere at Mars's average distance from the Sun, sunlight delivers only about 586 W/m², so this beacon stores energy by day to stay ready all night.",
+      "fact_id": "mars.solar.constant_mean"
+     }
+    },
+    "source": "// Proximity beacon: an amber lamp that lights while any rover is within 20 m.\n// It is powered by a battery that a small panel charges by day, so it works around the clock.\n//\n// Player's assumptions (not facts about Mars):\n//   range 20 m; battery 200 Wh; lamp 10 W; average charging 30 W;\n//   daylight counted as local hours 06-18; the hardware is built to take the cold.\n// Fact used at run time: the length of a sol [mars.time.sol]. A local hour is 1/24 sol,\n// so energy is counted in real hours of Mars time.\nimport { read, nearest, fact, fact_tier, spawn, pose, remove, state_set, signal_emit, log,\n         mem_get, mem_set, clamp, POS_X, POS_Z, ENV_LOCAL_HOUR, KIND_ROVER,\n         SHAPE_BOX, SHAPE_CYLINDER, SHAPE_SPHERE, SHAPE_PANEL, FACT_MARS_TIME_SOL } from \"./host\";\n\nconst RANGE_M: f32 = 20.0;      // player's range\nconst BATTERY_WH: f32 = 200.0;  // assumption: battery size\nconst LAMP_W: f32 = 10.0;       // assumption: lamp power draw\nconst CHARGE_W: f32 = 30.0;     // assumption: average panel output while charging\nconst DAY_START_H: f32 = 6.0;   // assumption: charging window start (local hour)\nconst DAY_END_H: f32 = 18.0;    // assumption: charging window end (local hour)\n\nconst SLOT_BATT: i32 = 0;\nconst SLOT_DIST: i32 = 1;\nconst SLOT_LIT: i32 = 2;\nconst SLOT_CHARGING: i32 = 3;\nconst MEM_BATT: i32 = 0;        // battery Wh, survives reload\nconst MEM_INIT: i32 = 1;        // 1 once the battery has been filled the first time\nconst SIGNAL_LIT: i32 = 200;\n\nconst LOG_LAMP: i32 = 1;        // value: 1 lamp on, 0 lamp off\nconst LOG_EMPTY: i32 = 2;       // value: local hour the battery ran flat\nconst LOG_TIER: i32 = 3;        // value: provenance tier of mars.time.sol\n\nlet base: i32 = -1, mast: i32 = -1, panel: i32 = -1, lamp: i32 = -1;\nlet batt: f32 = 0.0;\nlet solS: f32 = 0.0;            // sol length in seconds, from the fact index\nlet lastHour: f32 = -1.0;\nlet lit: i32 = 0;\nlet wasEmpty: i32 = 0;\n\nexport function init(): void {\n  base = spawn(SHAPE_BOX, 0.6, 0.2, 0.6, 0.4, 0.4, 0.4);\n  mast = spawn(SHAPE_CYLINDER, 0.08, 1.8, 0.08, 0.75, 0.75, 0.75);\n  panel = spawn(SHAPE_PANEL, 0.5, 0.5, 0.03, 0.1, 0.2, 0.55);\n  pose(base, 0.0, 0.1, 0.0, 0.0, 0.0);\n  pose(mast, 0.0, 1.1, 0.0, 0.0, 0.0);\n  pose(panel, 0.0, 0.7, 0.35, 0.0, 0.6);\n\n  solS = fact(FACT_MARS_TIME_SOL);\n  if (!(solS > 0.0)) solS = 0.0;  // if the fact were missing, energy accounting simply pauses\n  log(LOG_TIER, <f32>fact_tier(FACT_MARS_TIME_SOL));\n\n  if (mem_get(MEM_INIT) != 1.0) {  // first placement: start with a full battery (assumption)\n    batt = BATTERY_WH;\n    mem_set(MEM_INIT, 1.0);\n  } else {\n    batt = mem_get(MEM_BATT);\n  }\n}\n\nexport function tick(dt: f32): void {\n  const hour = read(ENV_LOCAL_HOUR);\n  let dh: f32 = 0.0;\n  if (lastHour >= 0.0) {\n    dh = hour - lastHour;\n    if (dh < 0.0) dh += 24.0;     // crossed midnight\n  }\n  lastHour = hour;\n  const realH: f32 = dh * (solS / 24.0) / 3600.0;  // local hours -> real hours\n\n  const charging: i32 = (hour >= DAY_START_H && hour < DAY_END_H) ? 1 : 0;\n  if (charging == 1) batt += CHARGE_W * realH;\n  if (lit == 1) batt -= LAMP_W * realH;\n  batt = clamp(batt, 0.0, BATTERY_WH);\n\n  const d = nearest(KIND_ROVER, read(POS_X), read(POS_Z));  // -1 if no rover exists\n  const want: i32 = (d >= 0.0 && d <= RANGE_M && batt > 0.0) ? 1 : 0;\n\n  if (want != lit) {\n    lit = want;\n    if (lit == 1) {\n      lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 1.0, 0.6, 0.05);  // amber\n      pose(lamp, 0.0, 2.15, 0.0, 0.0, 0.0);\n    } else if (lamp >= 0) {\n      remove(lamp);\n      lamp = -1;\n    }\n    log(LOG_LAMP, <f32>lit);\n  }\n\n  const empty: i32 = batt <= 0.0 ? 1 : 0;\n  if (empty == 1 && wasEmpty == 0) log(LOG_EMPTY, hour);\n  wasEmpty = empty;\n\n  mem_set(MEM_BATT, batt);\n  state_set(SLOT_BATT, batt);\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>lit);\n  state_set(SLOT_CHARGING, <f32>charging);\n  signal_emit(SIGNAL_LIT, <f32>lit);\n}\n",
+    "wasm": "AGFzbQEAAAABNglgAn99AGABfwF9YAd/fX19fX19AX9gBn99fX19fQBgAX0AYAAAYAF/AGADf319AX1gAX8BfwKtAQwEaG9zdAlzdGF0ZV9zZXQAAARob3N0BXNwYXduAAIEaG9zdARwb3NlAAMEaG9zdARyZWFkAAEEaG9zdANsb2cAAARob3N0B21lbV9zZXQAAARob3N0B21lbV9nZXQAAQRob3N0C3NpZ25hbF9lbWl0AAAEaG9zdAZyZW1vdmUABgRob3N0B25lYXJlc3QABwRob3N0CWZhY3RfdGllcgAIBGhvc3QEZmFjdAABAwMCBAUFBQEBAIACBjcJfwFBfwt/AUF/C38BQX8LfwFBfwt9AUMAAAAAC30BQwAAAAALfQFDAACAvwt/AUEAC38BQQALBxgDBGluaXQADQR0aWNrAAwGbWVtb3J5AgAKjQUC/QICAn8BfUEPEAMhACMGQwAAAABgBH0gACMGkyIDQwAAAABdBH0gA0MAAMBBkgUgAwsFQwAAAAALIAAkBiMFQwAAwEGVlEMAAGFFlSEDIABDAACQQV0gAEMAAMBAYHEiAQRAIwQgA0MAAPBBlJIkBAsjB0EBRgRAIwQgA0MAACBBlJMkBAtDAAAAAEMAAEhDIwQiAyADQwAASENeGyADQwAAAABdGyQEQQBBABADQQEQAxAJIgNDAACgQV8gA0MAAAAAYHEjBEMAAAAAXnEiAiMHRwRAIAIkByMHQQFGBEBBAkOamZk+Q5qZmT5DmpmZPkMAAIA/Q5qZGT9DzcxMPRABJAMjA0MAAAAAQ5qZCUBDAAAAAEMAAAAAQwAAAAAQAgUjA0EATgRAIwMQCEF/JAMLC0EBIweyEAQLIwRDAAAAAF8iAiMIRXEEQEECIAAQBAsgAiQIQQAjBBAFQQAjBBAAQQEgAxAAQQIjB7IQAEEDIAGyEABByAEjB7IQBwuLAgBBAEOamRk/Q83MTD5DmpkZP0PNzMw+Q83MzD5DzczMPhABJABBAUMK16M9Q2Zm5j9DCtejPUMAAEA/QwAAQD9DAABAPxABJAFBBEMAAAA/QwAAAD9Dj8L1PEPNzMw9Q83MTD5DzcwMPxABJAIjAEMAAAAAQ83MzD1DAAAAAEMAAAAAQwAAAAAQAiMBQwAAAABDzcyMP0MAAAAAQwAAAABDAAAAABACIwJDAAAAAEMzMzM/QzMzsz5DAAAAAEOamRk/EAJBAxALJAUjBUMAAAAAXkUEQEMAAAAAJAULQQNBAxAKshAEQQEQBkMAAIA/XARAQwAASEMkBEEBQwAAgD8QBQVBABAGJAQLCw==",
+    "explanation": "**What it does.** Your beacon is a grey mast on a small base, with a tilted solar panel.\n\n- **Lighting.** Every tick it checks the distance to the nearest rover. While one is within 20 m, an amber lamp glows on top. Otherwise the lamp is dark.\n- **Battery.** It charges during the day and drains only while the lamp is lit. The charge survives a reload of the module.\n- **Inspector.** Shows battery charge, rover distance, lamp state and whether it is charging.\n- **Signal.** It emits code 200 (1 when lit, 0 when dark), so other players' builds can react to it.\n\n**Facts that shaped it.**\n- **Why a battery at all.** Sunlight at Mars is weak: about 586 W/m² above the atmosphere, versus 1361 W/m² at Earth [mars.solar.constant_mean] [sun.solar_constant_1au]. Dust dims it further, with optical depth around 0.4 in the clear season and up to about 2 in the January 2022 storm [jezero.dust.optical_depth_background_my36] [jezero.dust.optical_depth_storm_jan2022].\n- **The cold question.** Nights near 193 K [jezero.temperature.my36_air_diurnal_min] raised it, and you answered it with an assumption (below).\n- **Counting energy.** Energy is counted in real time using the length of a sol, read live [mars.time.sol]. One local hour on the clock is 1/24 of a sol.\n\n**Your assumptions, labelled in the inspector.** None of these comes from the fact index.\n- **Range and colour.** A 20 m range and an amber lamp.\n- **Power numbers.** A 200 Wh battery, a 10 W lamp and a 30 W average charging rate. These make it comfortably last a night of continuous lighting.\n- **Daylight window.** Charging is counted from local hour 06 to 18. Real day length shifts with the season, and the module can't read the solar-flux table yet.\n- **The cold.** The hardware is built to take it, with no heater draw.\n- **Storm days.** The panel's output doesn't drop when the sky is dusty. A dust-aware version could come later.",
+    "fact_ids": [
+     "mars.time.sol",
+     "mars.solar.constant_mean",
+     "sun.solar_constant_1au",
+     "jezero.dust.optical_depth_background_my36",
+     "jezero.dust.optical_depth_storm_jan2022",
+     "jezero.temperature.my36_air_diurnal_min"
+    ],
+    "report": "ok: 600 ticks, 3008 actuator calls, worst tick 1.141 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+    "tries": 1,
+    "log": [
+     {
+      "attempt": 1,
+      "ok": true,
+      "error": null,
+      "report": "ok: 600 ticks, 3008 actuator calls, worst tick 1.141 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+      "source": "// Proximity beacon: an amber lamp that lights while any rover is within 20 m.\n// It is powered by a battery that a small panel charges by day, so it works around the clock.\n//\n// Player's assumptions (not facts about Mars):\n//   range 20 m; battery 200 Wh; lamp 10 W; average charging 30 W;\n//   daylight counted as local hours 06-18; the hardware is built to take the cold.\n// Fact used at run time: the length of a sol [mars.time.sol]. A local hour is 1/24 sol,\n// so energy is counted in real hours of Mars time.\nimport { read, nearest, fact, fact_tier, spawn, pose, remove, state_set, signal_emit, log,\n         mem_get, mem_set, clamp, POS_X, POS_Z, ENV_LOCAL_HOUR, KIND_ROVER,\n         SHAPE_BOX, SHAPE_CYLINDER, SHAPE_SPHERE, SHAPE_PANEL, FACT_MARS_TIME_SOL } from \"./host\";\n\nconst RANGE_M: f32 = 20.0;      // player's range\nconst BATTERY_WH: f32 = 200.0;  // assumption: battery size\nconst LAMP_W: f32 = 10.0;       // assumption: lamp power draw\nconst CHARGE_W: f32 = 30.0;     // assumption: average panel output while charging\nconst DAY_START_H: f32 = 6.0;   // assumption: charging window start (local hour)\nconst DAY_END_H: f32 = 18.0;    // assumption: charging window end (local hour)\n\nconst SLOT_BATT: i32 = 0;\nconst SLOT_DIST: i32 = 1;\nconst SLOT_LIT: i32 = 2;\nconst SLOT_CHARGING: i32 = 3;\nconst MEM_BATT: i32 = 0;        // battery Wh, survives reload\nconst MEM_INIT: i32 = 1;        // 1 once the battery has been filled the first time\nconst SIGNAL_LIT: i32 = 200;\n\nconst LOG_LAMP: i32 = 1;        // value: 1 lamp on, 0 lamp off\nconst LOG_EMPTY: i32 = 2;       // value: local hour the battery ran flat\nconst LOG_TIER: i32 = 3;        // value: provenance tier of mars.time.sol\n\nlet base: i32 = -1, mast: i32 = -1, panel: i32 = -1, lamp: i32 = -1;\nlet batt: f32 = 0.0;\nlet solS: f32 = 0.0;            // sol length in seconds, from the fact index\nlet lastHour: f32 = -1.0;\nlet lit: i32 = 0;\nlet wasEmpty: i32 = 0;\n\nexport function init(): void {\n  base = spawn(SHAPE_BOX, 0.6, 0.2, 0.6, 0.4, 0.4, 0.4);\n  mast = spawn(SHAPE_CYLINDER, 0.08, 1.8, 0.08, 0.75, 0.75, 0.75);\n  panel = spawn(SHAPE_PANEL, 0.5, 0.5, 0.03, 0.1, 0.2, 0.55);\n  pose(base, 0.0, 0.1, 0.0, 0.0, 0.0);\n  pose(mast, 0.0, 1.1, 0.0, 0.0, 0.0);\n  pose(panel, 0.0, 0.7, 0.35, 0.0, 0.6);\n\n  solS = fact(FACT_MARS_TIME_SOL);\n  if (!(solS > 0.0)) solS = 0.0;  // if the fact were missing, energy accounting simply pauses\n  log(LOG_TIER, <f32>fact_tier(FACT_MARS_TIME_SOL));\n\n  if (mem_get(MEM_INIT) != 1.0) {  // first placement: start with a full battery (assumption)\n    batt = BATTERY_WH;\n    mem_set(MEM_INIT, 1.0);\n  } else {\n    batt = mem_get(MEM_BATT);\n  }\n}\n\nexport function tick(dt: f32): void {\n  const hour = read(ENV_LOCAL_HOUR);\n  let dh: f32 = 0.0;\n  if (lastHour >= 0.0) {\n    dh = hour - lastHour;\n    if (dh < 0.0) dh += 24.0;     // crossed midnight\n  }\n  lastHour = hour;\n  const realH: f32 = dh * (solS / 24.0) / 3600.0;  // local hours -> real hours\n\n  const charging: i32 = (hour >= DAY_START_H && hour < DAY_END_H) ? 1 : 0;\n  if (charging == 1) batt += CHARGE_W * realH;\n  if (lit == 1) batt -= LAMP_W * realH;\n  batt = clamp(batt, 0.0, BATTERY_WH);\n\n  const d = nearest(KIND_ROVER, read(POS_X), read(POS_Z));  // -1 if no rover exists\n  const want: i32 = (d >= 0.0 && d <= RANGE_M && batt > 0.0) ? 1 : 0;\n\n  if (want != lit) {\n    lit = want;\n    if (lit == 1) {\n      lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 1.0, 0.6, 0.05);  // amber\n      pose(lamp, 0.0, 2.15, 0.0, 0.0, 0.0);\n    } else if (lamp >= 0) {\n      remove(lamp);\n      lamp = -1;\n    }\n    log(LOG_LAMP, <f32>lit);\n  }\n\n  const empty: i32 = batt <= 0.0 ? 1 : 0;\n  if (empty == 1 && wasEmpty == 0) log(LOG_EMPTY, hour);\n  wasEmpty = empty;\n\n  mem_set(MEM_BATT, batt);\n  state_set(SLOT_BATT, batt);\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>lit);\n  state_set(SLOT_CHARGING, <f32>charging);\n  signal_emit(SIGNAL_LIT, <f32>lit);\n}\n",
+      "manifestText": "{\n  \"name\": \"proximity beacon\",\n  \"description\": \"A mast with a small solar panel and a battery. It lights an amber lamp while any rover is within 20 m, day or night. It charges by day and spends energy only while lit. The battery, panel, lamp and daylight window are the player's assumptions.\",\n  \"version\": 1,\n  \"author\": \"design agent\",\n  \"state\": [\n    { \"slot\": 0, \"label\": \"battery charge (assumed 200 Wh pack)\", \"unit\": \"Wh\" },\n    { \"slot\": 1, \"label\": \"distance to nearest rover (-1 = none)\", \"unit\": \"m\" },\n    { \"slot\": 2, \"label\": \"lamp lit\", \"unit\": \"flag\" },\n    { \"slot\": 3, \"label\": \"charging (assumed daylight 06-18 h)\", \"unit\": \"flag\" }\n  ],\n  \"signals\": {\n    \"emits\": [ { \"code\": 200, \"label\": \"beacon lit (1) or dark (0)\", \"unit\": \"flag\" } ]\n  },\n  \"shapes\": 4,\n  \"fact_ids\": [\n    \"mars.time.sol\",\n    \"mars.solar.constant_mean\",\n    \"sun.solar_constant_1au\",\n    \"jezero.dust.optical_depth_background_my36\",\n    \"jezero.dust.optical_depth_storm_jan2022\",\n    \"jezero.temperature.my36_air_diurnal_min\"\n  ],\n  \"did_you_know\": {\n    \"text\": \"Above the atmosphere at Mars's average distance from the Sun, sunlight delivers only about 586 W/m², so this beacon stores energy by day to stay ready all night.\",\n    \"fact_id\": \"mars.solar.constant_mean\"\n  }\n}"
+     }
+    ]
+   },
+   "at": "2026-11-11T20:14:16.704Z",
+   "after_failure": false
+  }
+ ],
+ "questions": [
+  {
+   "text": "Happy to build this beacon. Two choices are still open, and Mars has an opinion on each.\n\n**1. What powers it, and should it work at night?**\nSunlight at Mars is much weaker than at Earth. Above the atmosphere it is about 586 W/m², against 1361 W/m² at Earth [mars.solar.constant_mean] [sun.solar_constant_1au].\n\n- **Dust cuts that further.** In the clear season the dust optical depth at Jezero is around 0.4 [jezero.dust.optical_depth_background_my36]. The January 2022 regional storm pushed it to about 2 [jezero.dust.optical_depth_storm_jan2022].\n- **Option A: solar panel only.** The beacon lights up for rovers during the day and goes dark at night.\n- **Option B: a battery it charges by day.** It works around the clock. The battery size would be your assumption, since the index doesn't give one.\n- **Option C: something else.** You might have another power source in mind.\n\n**2. How does it handle the cold?**\nOn a typical night at Jezero the air drops to about 193 K, roughly −80 °C [jezero.temperature.my36_air_diurnal_min]. The beacon can read the current air temperature as it runs. So it could:\n\n- keep a heater running, and show it working when it's cold,\n- dim or switch off below a temperature you pick, or\n- ignore the cold entirely, as a labelled assumption that it's built to take it.\n\n**Already settled:** The 20 m range is your number, and the build will be labelled that way. \"Any rover\" works as you'd hope: the beacon checks the distance to whichever rover is closest. It also needs no colour decision yet, but tell me if you want a particular one.",
+   "fact_ids": [
+    "mars.solar.constant_mean",
+    "sun.solar_constant_1au",
+    "jezero.dust.optical_depth_background_my36",
+    "jezero.dust.optical_depth_storm_jan2022",
+    "jezero.temperature.my36_air_diurnal_min"
+   ],
+   "fact_ids_other_punctuation": [],
+   "numbers_without_facts": [
+    "586 W",
+    "193 K"
+   ]
+  }
+ ],
+ "model": "claude-opus-5-5",
+ "system_sha256": "3cc2a5f65e70d05ca68a75c1a08506751cda5bfd9d37277bd324d85ef4e674a7",
+ "system_bytes": 82486,
+ "facts_in_prompt": 77,
+ "result": "module",
+ "name": "proximity_beacon",
+ "tries": 1,
+ "report": "ok: 600 ticks, 3008 actuator calls, worst tick 1.141 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+ "manifest": {
+  "name": "proximity beacon",
+  "description": "A mast with a small solar panel and a battery. It lights an amber lamp while any rover is within 20 m, day or night. It charges by day and spends energy only while lit. The battery, panel, lamp and daylight window are the player's assumptions.",
+  "version": 1,
+  "author": "design agent",
+  "state": [
+   {
+    "slot": 0,
+    "label": "battery charge (assumed 200 Wh pack)",
+    "unit": "Wh"
+   },
+   {
+    "slot": 1,
+    "label": "distance to nearest rover (-1 = none)",
+    "unit": "m"
+   },
+   {
+    "slot": 2,
+    "label": "lamp lit",
+    "unit": "flag"
+   },
+   {
+    "slot": 3,
+    "label": "charging (assumed daylight 06-18 h)",
+    "unit": "flag"
+   }
+  ],
+  "signals": {
+   "emits": [
+    {
+     "code": 200,
+     "label": "beacon lit (1) or dark (0)",
+     "unit": "flag"
+    }
+   ]
+  },
+  "shapes": 4,
+  "fact_ids": [
+   "mars.time.sol",
+   "mars.solar.constant_mean",
+   "sun.solar_constant_1au",
+   "jezero.dust.optical_depth_background_my36",
+   "jezero.dust.optical_depth_storm_jan2022",
+   "jezero.temperature.my36_air_diurnal_min"
+  ],
+  "did_you_know": {
+   "text": "Above the atmosphere at Mars's average distance from the Sun, sunlight delivers only about 586 W/m², so this beacon stores energy by day to stay ready all night.",
+   "fact_id": "mars.solar.constant_mean"
+  }
+ },
+ "source": "// Proximity beacon: an amber lamp that lights while any rover is within 20 m.\n// It is powered by a battery that a small panel charges by day, so it works around the clock.\n//\n// Player's assumptions (not facts about Mars):\n//   range 20 m; battery 200 Wh; lamp 10 W; average charging 30 W;\n//   daylight counted as local hours 06-18; the hardware is built to take the cold.\n// Fact used at run time: the length of a sol [mars.time.sol]. A local hour is 1/24 sol,\n// so energy is counted in real hours of Mars time.\nimport { read, nearest, fact, fact_tier, spawn, pose, remove, state_set, signal_emit, log,\n         mem_get, mem_set, clamp, POS_X, POS_Z, ENV_LOCAL_HOUR, KIND_ROVER,\n         SHAPE_BOX, SHAPE_CYLINDER, SHAPE_SPHERE, SHAPE_PANEL, FACT_MARS_TIME_SOL } from \"./host\";\n\nconst RANGE_M: f32 = 20.0;      // player's range\nconst BATTERY_WH: f32 = 200.0;  // assumption: battery size\nconst LAMP_W: f32 = 10.0;       // assumption: lamp power draw\nconst CHARGE_W: f32 = 30.0;     // assumption: average panel output while charging\nconst DAY_START_H: f32 = 6.0;   // assumption: charging window start (local hour)\nconst DAY_END_H: f32 = 18.0;    // assumption: charging window end (local hour)\n\nconst SLOT_BATT: i32 = 0;\nconst SLOT_DIST: i32 = 1;\nconst SLOT_LIT: i32 = 2;\nconst SLOT_CHARGING: i32 = 3;\nconst MEM_BATT: i32 = 0;        // battery Wh, survives reload\nconst MEM_INIT: i32 = 1;        // 1 once the battery has been filled the first time\nconst SIGNAL_LIT: i32 = 200;\n\nconst LOG_LAMP: i32 = 1;        // value: 1 lamp on, 0 lamp off\nconst LOG_EMPTY: i32 = 2;       // value: local hour the battery ran flat\nconst LOG_TIER: i32 = 3;        // value: provenance tier of mars.time.sol\n\nlet base: i32 = -1, mast: i32 = -1, panel: i32 = -1, lamp: i32 = -1;\nlet batt: f32 = 0.0;\nlet solS: f32 = 0.0;            // sol length in seconds, from the fact index\nlet lastHour: f32 = -1.0;\nlet lit: i32 = 0;\nlet wasEmpty: i32 = 0;\n\nexport function init(): void {\n  base = spawn(SHAPE_BOX, 0.6, 0.2, 0.6, 0.4, 0.4, 0.4);\n  mast = spawn(SHAPE_CYLINDER, 0.08, 1.8, 0.08, 0.75, 0.75, 0.75);\n  panel = spawn(SHAPE_PANEL, 0.5, 0.5, 0.03, 0.1, 0.2, 0.55);\n  pose(base, 0.0, 0.1, 0.0, 0.0, 0.0);\n  pose(mast, 0.0, 1.1, 0.0, 0.0, 0.0);\n  pose(panel, 0.0, 0.7, 0.35, 0.0, 0.6);\n\n  solS = fact(FACT_MARS_TIME_SOL);\n  if (!(solS > 0.0)) solS = 0.0;  // if the fact were missing, energy accounting simply pauses\n  log(LOG_TIER, <f32>fact_tier(FACT_MARS_TIME_SOL));\n\n  if (mem_get(MEM_INIT) != 1.0) {  // first placement: start with a full battery (assumption)\n    batt = BATTERY_WH;\n    mem_set(MEM_INIT, 1.0);\n  } else {\n    batt = mem_get(MEM_BATT);\n  }\n}\n\nexport function tick(dt: f32): void {\n  const hour = read(ENV_LOCAL_HOUR);\n  let dh: f32 = 0.0;\n  if (lastHour >= 0.0) {\n    dh = hour - lastHour;\n    if (dh < 0.0) dh += 24.0;     // crossed midnight\n  }\n  lastHour = hour;\n  const realH: f32 = dh * (solS / 24.0) / 3600.0;  // local hours -> real hours\n\n  const charging: i32 = (hour >= DAY_START_H && hour < DAY_END_H) ? 1 : 0;\n  if (charging == 1) batt += CHARGE_W * realH;\n  if (lit == 1) batt -= LAMP_W * realH;\n  batt = clamp(batt, 0.0, BATTERY_WH);\n\n  const d = nearest(KIND_ROVER, read(POS_X), read(POS_Z));  // -1 if no rover exists\n  const want: i32 = (d >= 0.0 && d <= RANGE_M && batt > 0.0) ? 1 : 0;\n\n  if (want != lit) {\n    lit = want;\n    if (lit == 1) {\n      lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 1.0, 0.6, 0.05);  // amber\n      pose(lamp, 0.0, 2.15, 0.0, 0.0, 0.0);\n    } else if (lamp >= 0) {\n      remove(lamp);\n      lamp = -1;\n    }\n    log(LOG_LAMP, <f32>lit);\n  }\n\n  const empty: i32 = batt <= 0.0 ? 1 : 0;\n  if (empty == 1 && wasEmpty == 0) log(LOG_EMPTY, hour);\n  wasEmpty = empty;\n\n  mem_set(MEM_BATT, batt);\n  state_set(SLOT_BATT, batt);\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>lit);\n  state_set(SLOT_CHARGING, <f32>charging);\n  signal_emit(SIGNAL_LIT, <f32>lit);\n}\n",
+ "explanation": "**What it does.** Your beacon is a grey mast on a small base, with a tilted solar panel.\n\n- **Lighting.** Every tick it checks the distance to the nearest rover. While one is within 20 m, an amber lamp glows on top. Otherwise the lamp is dark.\n- **Battery.** It charges during the day and drains only while the lamp is lit. The charge survives a reload of the module.\n- **Inspector.** Shows battery charge, rover distance, lamp state and whether it is charging.\n- **Signal.** It emits code 200 (1 when lit, 0 when dark), so other players' builds can react to it.\n\n**Facts that shaped it.**\n- **Why a battery at all.** Sunlight at Mars is weak: about 586 W/m² above the atmosphere, versus 1361 W/m² at Earth [mars.solar.constant_mean] [sun.solar_constant_1au]. Dust dims it further, with optical depth around 0.4 in the clear season and up to about 2 in the January 2022 storm [jezero.dust.optical_depth_background_my36] [jezero.dust.optical_depth_storm_jan2022].\n- **The cold question.** Nights near 193 K [jezero.temperature.my36_air_diurnal_min] raised it, and you answered it with an assumption (below).\n- **Counting energy.** Energy is counted in real time using the length of a sol, read live [mars.time.sol]. One local hour on the clock is 1/24 of a sol.\n\n**Your assumptions, labelled in the inspector.** None of these comes from the fact index.\n- **Range and colour.** A 20 m range and an amber lamp.\n- **Power numbers.** A 200 Wh battery, a 10 W lamp and a 30 W average charging rate. These make it comfortably last a night of continuous lighting.\n- **Daylight window.** Charging is counted from local hour 06 to 18. Real day length shifts with the season, and the module can't read the solar-flux table yet.\n- **The cold.** The hardware is built to take it, with no heater draw.\n- **Storm days.** The panel's output doesn't drop when the sky is dusty. A dust-aware version could come later.",
+ "fact_ids": [
+  "mars.time.sol",
+  "mars.solar.constant_mean",
+  "sun.solar_constant_1au",
+  "jezero.dust.optical_depth_background_my36",
+  "jezero.dust.optical_depth_storm_jan2022",
+  "jezero.temperature.my36_air_diurnal_min"
+ ],
+ "log": [
+  {
+   "attempt": 1,
+   "ok": true,
+   "error": null,
+   "report": "ok: 600 ticks, 3008 actuator calls, worst tick 1.141 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+   "source": "// Proximity beacon: an amber lamp that lights while any rover is within 20 m.\n// It is powered by a battery that a small panel charges by day, so it works around the clock.\n//\n// Player's assumptions (not facts about Mars):\n//   range 20 m; battery 200 Wh; lamp 10 W; average charging 30 W;\n//   daylight counted as local hours 06-18; the hardware is built to take the cold.\n// Fact used at run time: the length of a sol [mars.time.sol]. A local hour is 1/24 sol,\n// so energy is counted in real hours of Mars time.\nimport { read, nearest, fact, fact_tier, spawn, pose, remove, state_set, signal_emit, log,\n         mem_get, mem_set, clamp, POS_X, POS_Z, ENV_LOCAL_HOUR, KIND_ROVER,\n         SHAPE_BOX, SHAPE_CYLINDER, SHAPE_SPHERE, SHAPE_PANEL, FACT_MARS_TIME_SOL } from \"./host\";\n\nconst RANGE_M: f32 = 20.0;      // player's range\nconst BATTERY_WH: f32 = 200.0;  // assumption: battery size\nconst LAMP_W: f32 = 10.0;       // assumption: lamp power draw\nconst CHARGE_W: f32 = 30.0;     // assumption: average panel output while charging\nconst DAY_START_H: f32 = 6.0;   // assumption: charging window start (local hour)\nconst DAY_END_H: f32 = 18.0;    // assumption: charging window end (local hour)\n\nconst SLOT_BATT: i32 = 0;\nconst SLOT_DIST: i32 = 1;\nconst SLOT_LIT: i32 = 2;\nconst SLOT_CHARGING: i32 = 3;\nconst MEM_BATT: i32 = 0;        // battery Wh, survives reload\nconst MEM_INIT: i32 = 1;        // 1 once the battery has been filled the first time\nconst SIGNAL_LIT: i32 = 200;\n\nconst LOG_LAMP: i32 = 1;        // value: 1 lamp on, 0 lamp off\nconst LOG_EMPTY: i32 = 2;       // value: local hour the battery ran flat\nconst LOG_TIER: i32 = 3;        // value: provenance tier of mars.time.sol\n\nlet base: i32 = -1, mast: i32 = -1, panel: i32 = -1, lamp: i32 = -1;\nlet batt: f32 = 0.0;\nlet solS: f32 = 0.0;            // sol length in seconds, from the fact index\nlet lastHour: f32 = -1.0;\nlet lit: i32 = 0;\nlet wasEmpty: i32 = 0;\n\nexport function init(): void {\n  base = spawn(SHAPE_BOX, 0.6, 0.2, 0.6, 0.4, 0.4, 0.4);\n  mast = spawn(SHAPE_CYLINDER, 0.08, 1.8, 0.08, 0.75, 0.75, 0.75);\n  panel = spawn(SHAPE_PANEL, 0.5, 0.5, 0.03, 0.1, 0.2, 0.55);\n  pose(base, 0.0, 0.1, 0.0, 0.0, 0.0);\n  pose(mast, 0.0, 1.1, 0.0, 0.0, 0.0);\n  pose(panel, 0.0, 0.7, 0.35, 0.0, 0.6);\n\n  solS = fact(FACT_MARS_TIME_SOL);\n  if (!(solS > 0.0)) solS = 0.0;  // if the fact were missing, energy accounting simply pauses\n  log(LOG_TIER, <f32>fact_tier(FACT_MARS_TIME_SOL));\n\n  if (mem_get(MEM_INIT) != 1.0) {  // first placement: start with a full battery (assumption)\n    batt = BATTERY_WH;\n    mem_set(MEM_INIT, 1.0);\n  } else {\n    batt = mem_get(MEM_BATT);\n  }\n}\n\nexport function tick(dt: f32): void {\n  const hour = read(ENV_LOCAL_HOUR);\n  let dh: f32 = 0.0;\n  if (lastHour >= 0.0) {\n    dh = hour - lastHour;\n    if (dh < 0.0) dh += 24.0;     // crossed midnight\n  }\n  lastHour = hour;\n  const realH: f32 = dh * (solS / 24.0) / 3600.0;  // local hours -> real hours\n\n  const charging: i32 = (hour >= DAY_START_H && hour < DAY_END_H) ? 1 : 0;\n  if (charging == 1) batt += CHARGE_W * realH;\n  if (lit == 1) batt -= LAMP_W * realH;\n  batt = clamp(batt, 0.0, BATTERY_WH);\n\n  const d = nearest(KIND_ROVER, read(POS_X), read(POS_Z));  // -1 if no rover exists\n  const want: i32 = (d >= 0.0 && d <= RANGE_M && batt > 0.0) ? 1 : 0;\n\n  if (want != lit) {\n    lit = want;\n    if (lit == 1) {\n      lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 1.0, 0.6, 0.05);  // amber\n      pose(lamp, 0.0, 2.15, 0.0, 0.0, 0.0);\n    } else if (lamp >= 0) {\n      remove(lamp);\n      lamp = -1;\n    }\n    log(LOG_LAMP, <f32>lit);\n  }\n\n  const empty: i32 = batt <= 0.0 ? 1 : 0;\n  if (empty == 1 && wasEmpty == 0) log(LOG_EMPTY, hour);\n  wasEmpty = empty;\n\n  mem_set(MEM_BATT, batt);\n  state_set(SLOT_BATT, batt);\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>lit);\n  state_set(SLOT_CHARGING, <f32>charging);\n  signal_emit(SIGNAL_LIT, <f32>lit);\n}\n",
+   "manifestText": "{\n  \"name\": \"proximity beacon\",\n  \"description\": \"A mast with a small solar panel and a battery. It lights an amber lamp while any rover is within 20 m, day or night. It charges by day and spends energy only while lit. The battery, panel, lamp and daylight window are the player's assumptions.\",\n  \"version\": 1,\n  \"author\": \"design agent\",\n  \"state\": [\n    { \"slot\": 0, \"label\": \"battery charge (assumed 200 Wh pack)\", \"unit\": \"Wh\" },\n    { \"slot\": 1, \"label\": \"distance to nearest rover (-1 = none)\", \"unit\": \"m\" },\n    { \"slot\": 2, \"label\": \"lamp lit\", \"unit\": \"flag\" },\n    { \"slot\": 3, \"label\": \"charging (assumed daylight 06-18 h)\", \"unit\": \"flag\" }\n  ],\n  \"signals\": {\n    \"emits\": [ { \"code\": 200, \"label\": \"beacon lit (1) or dark (0)\", \"unit\": \"flag\" } ]\n  },\n  \"shapes\": 4,\n  \"fact_ids\": [\n    \"mars.time.sol\",\n    \"mars.solar.constant_mean\",\n    \"sun.solar_constant_1au\",\n    \"jezero.dust.optical_depth_background_my36\",\n    \"jezero.dust.optical_depth_storm_jan2022\",\n    \"jezero.temperature.my36_air_diurnal_min\"\n  ],\n  \"did_you_know\": {\n    \"text\": \"Above the atmosphere at Mars's average distance from the Sun, sunlight delivers only about 586 W/m², so this beacon stores energy by day to stay ready all night.\",\n    \"fact_id\": \"mars.solar.constant_mean\"\n  }\n}"
+  }
+ ],
+ "wasm_sha256": "d191a849d798a1a47420a282d1453a19f139ca86c4a23f18265315416fc279fa",
+ "wasm_base64": "AGFzbQEAAAABNglgAn99AGABfwF9YAd/fX19fX19AX9gBn99fX19fQBgAX0AYAAAYAF/AGADf319AX1gAX8BfwKtAQwEaG9zdAlzdGF0ZV9zZXQAAARob3N0BXNwYXduAAIEaG9zdARwb3NlAAMEaG9zdARyZWFkAAEEaG9zdANsb2cAAARob3N0B21lbV9zZXQAAARob3N0B21lbV9nZXQAAQRob3N0C3NpZ25hbF9lbWl0AAAEaG9zdAZyZW1vdmUABgRob3N0B25lYXJlc3QABwRob3N0CWZhY3RfdGllcgAIBGhvc3QEZmFjdAABAwMCBAUFBQEBAIACBjcJfwFBfwt/AUF/C38BQX8LfwFBfwt9AUMAAAAAC30BQwAAAAALfQFDAACAvwt/AUEAC38BQQALBxgDBGluaXQADQR0aWNrAAwGbWVtb3J5AgAKjQUC/QICAn8BfUEPEAMhACMGQwAAAABgBH0gACMGkyIDQwAAAABdBH0gA0MAAMBBkgUgAwsFQwAAAAALIAAkBiMFQwAAwEGVlEMAAGFFlSEDIABDAACQQV0gAEMAAMBAYHEiAQRAIwQgA0MAAPBBlJIkBAsjB0EBRgRAIwQgA0MAACBBlJMkBAtDAAAAAEMAAEhDIwQiAyADQwAASENeGyADQwAAAABdGyQEQQBBABADQQEQAxAJIgNDAACgQV8gA0MAAAAAYHEjBEMAAAAAXnEiAiMHRwRAIAIkByMHQQFGBEBBAkOamZk+Q5qZmT5DmpmZPkMAAIA/Q5qZGT9DzcxMPRABJAMjA0MAAAAAQ5qZCUBDAAAAAEMAAAAAQwAAAAAQAgUjA0EATgRAIwMQCEF/JAMLC0EBIweyEAQLIwRDAAAAAF8iAiMIRXEEQEECIAAQBAsgAiQIQQAjBBAFQQAjBBAAQQEgAxAAQQIjB7IQAEEDIAGyEABByAEjB7IQBwuLAgBBAEOamRk/Q83MTD5DmpkZP0PNzMw+Q83MzD5DzczMPhABJABBAUMK16M9Q2Zm5j9DCtejPUMAAEA/QwAAQD9DAABAPxABJAFBBEMAAAA/QwAAAD9Dj8L1PEPNzMw9Q83MTD5DzcwMPxABJAIjAEMAAAAAQ83MzD1DAAAAAEMAAAAAQwAAAAAQAiMBQwAAAABDzcyMP0MAAAAAQwAAAABDAAAAABACIwJDAAAAAEMzMzM/QzMzsz5DAAAAAEOamRk/EAJBAxALJAUjBUMAAAAAXkUEQEMAAAAAJAULQQNBAxAKshAEQQEQBkMAAIA/XARAQwAASEMkBEEBQwAAgD8QBQVBABAGJAQLCw==",
+ "finished": "2026-11-11T20:14:16.705Z",
+ "question_asked_before_build": true,
+ "question_fact_grounded": true,
+ "numbers_without_facts": {
+  "question 1": [
+   "586 W",
+   "193 K"
+  ],
+  "explanation": [
+   "586 W",
+   "10 W",
+   "30 W"
+  ],
+  "manifest.state[3].label": [
+   "-18 h"
+  ],
+  "source comments": [
+   "10 W",
+   "30 W",
+   "24 sol"
+  ]
+ }
+}

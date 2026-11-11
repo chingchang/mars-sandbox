@@ -1,0 +1,157 @@
+{
+ "prompt_number": 2,
+ "prompt": "A beacon that lights up when any rover is within 20 metres.",
+ "started": "2026-11-11T20:09:12.154Z",
+ "git_head": "4eb4844960d109f1ade4e6a4479f68e60a4e1026",
+ "git_clean": false,
+ "turns": [
+  {
+   "request_messages": [
+    {
+     "role": "user",
+     "content": "A beacon that lights up when any rover is within 20 metres."
+    }
+   ],
+   "status": 200,
+   "answer": {
+    "type": "module",
+    "name": "proximity_beacon",
+    "manifest": {
+     "name": "proximity beacon",
+     "description": "A short mast with a lamp that glows amber while the nearest rover is within 20 m and dims when it leaves. It broadcasts signal 200 while lit and shows the rover distance and the local air temperature in the inspector.",
+     "version": 1,
+     "author": "design agent",
+     "state": [
+      {
+       "slot": 0,
+       "label": "distance to nearest rover (-1 = none)",
+       "unit": "m"
+      },
+      {
+       "slot": 1,
+       "label": "lamp lit",
+       "unit": "flag"
+      },
+      {
+       "slot": 2,
+       "label": "air temperature at the lamp (typical hour, MY36)",
+       "unit": "K"
+      }
+     ],
+     "signals": {
+      "emits": [
+       {
+        "code": 200,
+        "label": "beacon lit (1 while a rover is in range)",
+        "unit": "flag"
+       }
+      ]
+     },
+     "shapes": 3,
+     "fact_ids": [
+      "jezero.temperature.my36_air_hourly_mean"
+     ],
+     "did_you_know": {
+      "text": "The lamp on this beacon lives through a typical Jezero day that runs from about 195 K (-78 C) before dawn to about 247 K (-26 C) mid-afternoon, averaged hour by hour over a full Mars year measured by Perseverance.",
+      "fact_id": "jezero.temperature.my36_air_hourly_mean"
+     }
+    },
+    "source": "// Proximity beacon: a mast and a lamp. The lamp glows amber while the nearest\n// rover is within RANGE_M and turns dim when none is. Signal 200 is re-emitted\n// every tick while lit, so other players' modules can wire to it.\n//\n// RANGE_M (20 m) is the player's choice, not a fact about Mars.\n// The air temperature shown in slot 2 is ENV_AIR_TEMP_K, the typical value for\n// the current hour over Mars Year 36 (jezero.temperature.my36_air_hourly_mean),\n// not today's weather. Lamp power and heating are not modelled.\nimport { read, nearest, spawn, pose, remove, state_set, signal_emit, log, fact_tier,\n         POS_X, POS_Z, ENV_AIR_TEMP_K, KIND_ROVER, SHAPE_CYLINDER, SHAPE_SPHERE,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN } from \"./host\";\n\nconst RANGE_M: f32 = 20.0;          // player's detection radius\nconst SLOT_DIST: i32 = 0;\nconst SLOT_LIT: i32 = 1;\nconst SLOT_TEMP: i32 = 2;\nconst SIGNAL_LIT: i32 = 200;\nconst LOG_CHANGE: i32 = 40;         // value: rover distance (m) when the lamp switched\nconst LOG_TIER: i32 = 41;           // value: provenance tier of the temperature record\nconst LAMP_Y: f32 = 1.65;           // lamp height on the mast (design choice, m)\n\nlet mast: i32 = -1;\nlet lamp: i32 = -1;\nlet lit: i32 = -1;\n\nfunction setLamp(on: i32): void {\n  if (lamp >= 0) { remove(lamp); lamp = -1; }\n  if (on == 1) {\n    lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 1.0, 0.65, 0.1);   // bright amber\n  } else {\n    lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 0.25, 0.2, 0.15);  // dark glass\n  }\n  if (lamp >= 0) pose(lamp, 0.0, LAMP_Y, 0.0, 0.0, 0.0);\n}\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.08, 1.5, 0.08, 0.75, 0.75, 0.75);\n  if (mast >= 0) pose(mast, 0.0, 0.75, 0.0, 0.0, 0.0);\n  setLamp(0);\n  lit = 0;\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN));\n}\n\nexport function tick(dt: f32): void {\n  const x = read(POS_X);\n  const z = read(POS_Z);\n  const d = nearest(KIND_ROVER, x, z);                 // -1 if no rover exists\n  const on: i32 = (d >= 0.0 && d <= RANGE_M) ? 1 : 0;\n\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>on);\n  state_set(SLOT_TEMP, read(ENV_AIR_TEMP_K));\n\n  if (on != lit) {\n    lit = on;\n    setLamp(on);\n    log(LOG_CHANGE, d);\n  }\n  if (on == 1) signal_emit(SIGNAL_LIT, 1.0);           // re-emit every tick while lit\n}\n",
+    "wasm": "AGFzbQEAAAABNglgAn99AGABfwBgB399fX19fX0Bf2ABfwF9YAZ/fX19fX0AYAF9AGAAAGADf319AX1gAX8BfwKDAQkEaG9zdAlzdGF0ZV9zZXQAAARob3N0BXNwYXduAAIEaG9zdARyZWFkAAMEaG9zdARwb3NlAAQEaG9zdANsb2cAAARob3N0C3NpZ25hbF9lbWl0AAAEaG9zdAZyZW1vdmUAAQRob3N0B25lYXJlc3QABwRob3N0CWZhY3RfdGllcgAIAwQDAQUGBQUBAQCAAgYQA38BQX8LfwFBfwt/AUF/CwcYAwRpbml0AAsEdGljawAKBm1lbW9yeQIACsUCA4YBACMBQQBOBEAjARAGQX8kAQsgAEEBRgR/QQJDmpmZPkOamZk+Q5qZmT5DAACAP0NmZiY/Q83MzD0QAQVBAkOamZk+Q5qZmT5DmpmZPkMAAIA+Q83MTD5DmpkZPhABCyQBIwFBAE4EQCMBQwAAAABDMzPTP0MAAAAAQwAAAABDAAAAABADCwtdAQF/QQBBABACQQEQAhAHIgBDAACgQV8gAEMAAAAAYHEhAUEAIAAQAEEBIAGyEABBAkEOEAIQACABIwJHBEAgASQCIAEQCUEoIAAQBAsgAQRAQcgBQwAAgD8QBQsLXQBBAUMK16M9QwAAwD9DCtejPUMAAEA/QwAAQD9DAABAPxABJAAjAEEATgRAIwBDAAAAAEMAAEA/QwAAAABDAAAAAEMAAAAAEAMLQQAQCUEAJAJBKUHUABAIshAECw==",
+    "explanation": "What it does: the beacon is a 1.5 m grey mast with a lamp on top. Every tick it asks the world how far away the nearest rover is. If that rover is within 20 m, the lamp turns bright amber. If not, or if there is no rover at all, the lamp goes dark. While it is lit, it broadcasts signal 200 with the value 1, so other players can hook things to it, such as a gate, a siren or a counter. The inspector shows three readings: the rover distance, whether the lamp is lit, and the air temperature around the lamp. \"Any rover\" works because the world always reports the closest one, and that is the only one that matters for the 20 m test.\n\nWhich facts shaped it: the temperature reading comes from Perseverance's hour-by-hour record over a whole Mars year [jezero.temperature.my36_air_hourly_mean]. That record says your lamp sits in air that swings from around -78 C before dawn to around -26 C in the afternoon, every sol. It is a typical day, not today's weather. On a real beacon, that swing is the hard part: the electronics would need heat and power through every night.\n\nYour assumptions, not facts:\n- The 20 m range is your choice.\n- The lamp height and colours are my design choices.\n- The lamp runs for free in this version: no battery, no solar panel, no heater.\n\nIf you want to make it more Martian next, a good question is what keeps it alive through those nights. Solar plus a battery? Or should it only blink at night to save power?",
+    "fact_ids": [
+     "jezero.temperature.my36_air_hourly_mean"
+    ],
+    "report": "ok: 600 ticks, 2406 actuator calls, worst tick 1.292 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+    "tries": 1,
+    "log": [
+     {
+      "attempt": 1,
+      "ok": true,
+      "error": null,
+      "report": "ok: 600 ticks, 2406 actuator calls, worst tick 1.292 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+      "source": "// Proximity beacon: a mast and a lamp. The lamp glows amber while the nearest\n// rover is within RANGE_M and turns dim when none is. Signal 200 is re-emitted\n// every tick while lit, so other players' modules can wire to it.\n//\n// RANGE_M (20 m) is the player's choice, not a fact about Mars.\n// The air temperature shown in slot 2 is ENV_AIR_TEMP_K, the typical value for\n// the current hour over Mars Year 36 (jezero.temperature.my36_air_hourly_mean),\n// not today's weather. Lamp power and heating are not modelled.\nimport { read, nearest, spawn, pose, remove, state_set, signal_emit, log, fact_tier,\n         POS_X, POS_Z, ENV_AIR_TEMP_K, KIND_ROVER, SHAPE_CYLINDER, SHAPE_SPHERE,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN } from \"./host\";\n\nconst RANGE_M: f32 = 20.0;          // player's detection radius\nconst SLOT_DIST: i32 = 0;\nconst SLOT_LIT: i32 = 1;\nconst SLOT_TEMP: i32 = 2;\nconst SIGNAL_LIT: i32 = 200;\nconst LOG_CHANGE: i32 = 40;         // value: rover distance (m) when the lamp switched\nconst LOG_TIER: i32 = 41;           // value: provenance tier of the temperature record\nconst LAMP_Y: f32 = 1.65;           // lamp height on the mast (design choice, m)\n\nlet mast: i32 = -1;\nlet lamp: i32 = -1;\nlet lit: i32 = -1;\n\nfunction setLamp(on: i32): void {\n  if (lamp >= 0) { remove(lamp); lamp = -1; }\n  if (on == 1) {\n    lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 1.0, 0.65, 0.1);   // bright amber\n  } else {\n    lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 0.25, 0.2, 0.15);  // dark glass\n  }\n  if (lamp >= 0) pose(lamp, 0.0, LAMP_Y, 0.0, 0.0, 0.0);\n}\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.08, 1.5, 0.08, 0.75, 0.75, 0.75);\n  if (mast >= 0) pose(mast, 0.0, 0.75, 0.0, 0.0, 0.0);\n  setLamp(0);\n  lit = 0;\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN));\n}\n\nexport function tick(dt: f32): void {\n  const x = read(POS_X);\n  const z = read(POS_Z);\n  const d = nearest(KIND_ROVER, x, z);                 // -1 if no rover exists\n  const on: i32 = (d >= 0.0 && d <= RANGE_M) ? 1 : 0;\n\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>on);\n  state_set(SLOT_TEMP, read(ENV_AIR_TEMP_K));\n\n  if (on != lit) {\n    lit = on;\n    setLamp(on);\n    log(LOG_CHANGE, d);\n  }\n  if (on == 1) signal_emit(SIGNAL_LIT, 1.0);           // re-emit every tick while lit\n}\n",
+      "manifestText": "{\n  \"name\": \"proximity beacon\",\n  \"description\": \"A short mast with a lamp that glows amber while the nearest rover is within 20 m and dims when it leaves. It broadcasts signal 200 while lit and shows the rover distance and the local air temperature in the inspector.\",\n  \"version\": 1,\n  \"author\": \"design agent\",\n  \"state\": [\n    { \"slot\": 0, \"label\": \"distance to nearest rover (-1 = none)\", \"unit\": \"m\" },\n    { \"slot\": 1, \"label\": \"lamp lit\", \"unit\": \"flag\" },\n    { \"slot\": 2, \"label\": \"air temperature at the lamp (typical hour, MY36)\", \"unit\": \"K\" }\n  ],\n  \"signals\": {\n    \"emits\": [\n      { \"code\": 200, \"label\": \"beacon lit (1 while a rover is in range)\", \"unit\": \"flag\" }\n    ]\n  },\n  \"shapes\": 3,\n  \"fact_ids\": [\n    \"jezero.temperature.my36_air_hourly_mean\"\n  ],\n  \"did_you_know\": {\n    \"text\": \"The lamp on this beacon lives through a typical Jezero day that runs from about 195 K (-78 C) before dawn to about 247 K (-26 C) mid-afternoon, averaged hour by hour over a full Mars year measured by Perseverance.\",\n    \"fact_id\": \"jezero.temperature.my36_air_hourly_mean\"\n  }\n}"
+     }
+    ]
+   },
+   "at": "2026-11-11T20:09:59.485Z",
+   "after_failure": false
+  }
+ ],
+ "questions": [],
+ "model": "claude-opus-5-5",
+ "system_sha256": "9c0a54d28e249d11e03e08fd054f03ab02a6138ad9f51a1ea6dd5cd000abb5a6",
+ "system_bytes": 81958,
+ "facts_in_prompt": 77,
+ "result": "module",
+ "name": "proximity_beacon",
+ "tries": 1,
+ "report": "ok: 600 ticks, 2406 actuator calls, worst tick 1.292 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+ "manifest": {
+  "name": "proximity beacon",
+  "description": "A short mast with a lamp that glows amber while the nearest rover is within 20 m and dims when it leaves. It broadcasts signal 200 while lit and shows the rover distance and the local air temperature in the inspector.",
+  "version": 1,
+  "author": "design agent",
+  "state": [
+   {
+    "slot": 0,
+    "label": "distance to nearest rover (-1 = none)",
+    "unit": "m"
+   },
+   {
+    "slot": 1,
+    "label": "lamp lit",
+    "unit": "flag"
+   },
+   {
+    "slot": 2,
+    "label": "air temperature at the lamp (typical hour, MY36)",
+    "unit": "K"
+   }
+  ],
+  "signals": {
+   "emits": [
+    {
+     "code": 200,
+     "label": "beacon lit (1 while a rover is in range)",
+     "unit": "flag"
+    }
+   ]
+  },
+  "shapes": 3,
+  "fact_ids": [
+   "jezero.temperature.my36_air_hourly_mean"
+  ],
+  "did_you_know": {
+   "text": "The lamp on this beacon lives through a typical Jezero day that runs from about 195 K (-78 C) before dawn to about 247 K (-26 C) mid-afternoon, averaged hour by hour over a full Mars year measured by Perseverance.",
+   "fact_id": "jezero.temperature.my36_air_hourly_mean"
+  }
+ },
+ "source": "// Proximity beacon: a mast and a lamp. The lamp glows amber while the nearest\n// rover is within RANGE_M and turns dim when none is. Signal 200 is re-emitted\n// every tick while lit, so other players' modules can wire to it.\n//\n// RANGE_M (20 m) is the player's choice, not a fact about Mars.\n// The air temperature shown in slot 2 is ENV_AIR_TEMP_K, the typical value for\n// the current hour over Mars Year 36 (jezero.temperature.my36_air_hourly_mean),\n// not today's weather. Lamp power and heating are not modelled.\nimport { read, nearest, spawn, pose, remove, state_set, signal_emit, log, fact_tier,\n         POS_X, POS_Z, ENV_AIR_TEMP_K, KIND_ROVER, SHAPE_CYLINDER, SHAPE_SPHERE,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN } from \"./host\";\n\nconst RANGE_M: f32 = 20.0;          // player's detection radius\nconst SLOT_DIST: i32 = 0;\nconst SLOT_LIT: i32 = 1;\nconst SLOT_TEMP: i32 = 2;\nconst SIGNAL_LIT: i32 = 200;\nconst LOG_CHANGE: i32 = 40;         // value: rover distance (m) when the lamp switched\nconst LOG_TIER: i32 = 41;           // value: provenance tier of the temperature record\nconst LAMP_Y: f32 = 1.65;           // lamp height on the mast (design choice, m)\n\nlet mast: i32 = -1;\nlet lamp: i32 = -1;\nlet lit: i32 = -1;\n\nfunction setLamp(on: i32): void {\n  if (lamp >= 0) { remove(lamp); lamp = -1; }\n  if (on == 1) {\n    lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 1.0, 0.65, 0.1);   // bright amber\n  } else {\n    lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 0.25, 0.2, 0.15);  // dark glass\n  }\n  if (lamp >= 0) pose(lamp, 0.0, LAMP_Y, 0.0, 0.0, 0.0);\n}\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.08, 1.5, 0.08, 0.75, 0.75, 0.75);\n  if (mast >= 0) pose(mast, 0.0, 0.75, 0.0, 0.0, 0.0);\n  setLamp(0);\n  lit = 0;\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN));\n}\n\nexport function tick(dt: f32): void {\n  const x = read(POS_X);\n  const z = read(POS_Z);\n  const d = nearest(KIND_ROVER, x, z);                 // -1 if no rover exists\n  const on: i32 = (d >= 0.0 && d <= RANGE_M) ? 1 : 0;\n\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>on);\n  state_set(SLOT_TEMP, read(ENV_AIR_TEMP_K));\n\n  if (on != lit) {\n    lit = on;\n    setLamp(on);\n    log(LOG_CHANGE, d);\n  }\n  if (on == 1) signal_emit(SIGNAL_LIT, 1.0);           // re-emit every tick while lit\n}\n",
+ "explanation": "What it does: the beacon is a 1.5 m grey mast with a lamp on top. Every tick it asks the world how far away the nearest rover is. If that rover is within 20 m, the lamp turns bright amber. If not, or if there is no rover at all, the lamp goes dark. While it is lit, it broadcasts signal 200 with the value 1, so other players can hook things to it, such as a gate, a siren or a counter. The inspector shows three readings: the rover distance, whether the lamp is lit, and the air temperature around the lamp. \"Any rover\" works because the world always reports the closest one, and that is the only one that matters for the 20 m test.\n\nWhich facts shaped it: the temperature reading comes from Perseverance's hour-by-hour record over a whole Mars year [jezero.temperature.my36_air_hourly_mean]. That record says your lamp sits in air that swings from around -78 C before dawn to around -26 C in the afternoon, every sol. It is a typical day, not today's weather. On a real beacon, that swing is the hard part: the electronics would need heat and power through every night.\n\nYour assumptions, not facts:\n- The 20 m range is your choice.\n- The lamp height and colours are my design choices.\n- The lamp runs for free in this version: no battery, no solar panel, no heater.\n\nIf you want to make it more Martian next, a good question is what keeps it alive through those nights. Solar plus a battery? Or should it only blink at night to save power?",
+ "fact_ids": [
+  "jezero.temperature.my36_air_hourly_mean"
+ ],
+ "log": [
+  {
+   "attempt": 1,
+   "ok": true,
+   "error": null,
+   "report": "ok: 600 ticks, 2406 actuator calls, worst tick 1.292 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+   "source": "// Proximity beacon: a mast and a lamp. The lamp glows amber while the nearest\n// rover is within RANGE_M and turns dim when none is. Signal 200 is re-emitted\n// every tick while lit, so other players' modules can wire to it.\n//\n// RANGE_M (20 m) is the player's choice, not a fact about Mars.\n// The air temperature shown in slot 2 is ENV_AIR_TEMP_K, the typical value for\n// the current hour over Mars Year 36 (jezero.temperature.my36_air_hourly_mean),\n// not today's weather. Lamp power and heating are not modelled.\nimport { read, nearest, spawn, pose, remove, state_set, signal_emit, log, fact_tier,\n         POS_X, POS_Z, ENV_AIR_TEMP_K, KIND_ROVER, SHAPE_CYLINDER, SHAPE_SPHERE,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN } from \"./host\";\n\nconst RANGE_M: f32 = 20.0;          // player's detection radius\nconst SLOT_DIST: i32 = 0;\nconst SLOT_LIT: i32 = 1;\nconst SLOT_TEMP: i32 = 2;\nconst SIGNAL_LIT: i32 = 200;\nconst LOG_CHANGE: i32 = 40;         // value: rover distance (m) when the lamp switched\nconst LOG_TIER: i32 = 41;           // value: provenance tier of the temperature record\nconst LAMP_Y: f32 = 1.65;           // lamp height on the mast (design choice, m)\n\nlet mast: i32 = -1;\nlet lamp: i32 = -1;\nlet lit: i32 = -1;\n\nfunction setLamp(on: i32): void {\n  if (lamp >= 0) { remove(lamp); lamp = -1; }\n  if (on == 1) {\n    lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 1.0, 0.65, 0.1);   // bright amber\n  } else {\n    lamp = spawn(SHAPE_SPHERE, 0.3, 0.3, 0.3, 0.25, 0.2, 0.15);  // dark glass\n  }\n  if (lamp >= 0) pose(lamp, 0.0, LAMP_Y, 0.0, 0.0, 0.0);\n}\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.08, 1.5, 0.08, 0.75, 0.75, 0.75);\n  if (mast >= 0) pose(mast, 0.0, 0.75, 0.0, 0.0, 0.0);\n  setLamp(0);\n  lit = 0;\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN));\n}\n\nexport function tick(dt: f32): void {\n  const x = read(POS_X);\n  const z = read(POS_Z);\n  const d = nearest(KIND_ROVER, x, z);                 // -1 if no rover exists\n  const on: i32 = (d >= 0.0 && d <= RANGE_M) ? 1 : 0;\n\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>on);\n  state_set(SLOT_TEMP, read(ENV_AIR_TEMP_K));\n\n  if (on != lit) {\n    lit = on;\n    setLamp(on);\n    log(LOG_CHANGE, d);\n  }\n  if (on == 1) signal_emit(SIGNAL_LIT, 1.0);           // re-emit every tick while lit\n}\n",
+   "manifestText": "{\n  \"name\": \"proximity beacon\",\n  \"description\": \"A short mast with a lamp that glows amber while the nearest rover is within 20 m and dims when it leaves. It broadcasts signal 200 while lit and shows the rover distance and the local air temperature in the inspector.\",\n  \"version\": 1,\n  \"author\": \"design agent\",\n  \"state\": [\n    { \"slot\": 0, \"label\": \"distance to nearest rover (-1 = none)\", \"unit\": \"m\" },\n    { \"slot\": 1, \"label\": \"lamp lit\", \"unit\": \"flag\" },\n    { \"slot\": 2, \"label\": \"air temperature at the lamp (typical hour, MY36)\", \"unit\": \"K\" }\n  ],\n  \"signals\": {\n    \"emits\": [\n      { \"code\": 200, \"label\": \"beacon lit (1 while a rover is in range)\", \"unit\": \"flag\" }\n    ]\n  },\n  \"shapes\": 3,\n  \"fact_ids\": [\n    \"jezero.temperature.my36_air_hourly_mean\"\n  ],\n  \"did_you_know\": {\n    \"text\": \"The lamp on this beacon lives through a typical Jezero day that runs from about 195 K (-78 C) before dawn to about 247 K (-26 C) mid-afternoon, averaged hour by hour over a full Mars year measured by Perseverance.\",\n    \"fact_id\": \"jezero.temperature.my36_air_hourly_mean\"\n  }\n}"
+  }
+ ],
+ "wasm_sha256": "0a753fec2dd255666a946e7c9839b6f71b58c4109a39e877e0cb51d660fc88c1",
+ "wasm_base64": "AGFzbQEAAAABNglgAn99AGABfwBgB399fX19fX0Bf2ABfwF9YAZ/fX19fX0AYAF9AGAAAGADf319AX1gAX8BfwKDAQkEaG9zdAlzdGF0ZV9zZXQAAARob3N0BXNwYXduAAIEaG9zdARyZWFkAAMEaG9zdARwb3NlAAQEaG9zdANsb2cAAARob3N0C3NpZ25hbF9lbWl0AAAEaG9zdAZyZW1vdmUAAQRob3N0B25lYXJlc3QABwRob3N0CWZhY3RfdGllcgAIAwQDAQUGBQUBAQCAAgYQA38BQX8LfwFBfwt/AUF/CwcYAwRpbml0AAsEdGljawAKBm1lbW9yeQIACsUCA4YBACMBQQBOBEAjARAGQX8kAQsgAEEBRgR/QQJDmpmZPkOamZk+Q5qZmT5DAACAP0NmZiY/Q83MzD0QAQVBAkOamZk+Q5qZmT5DmpmZPkMAAIA+Q83MTD5DmpkZPhABCyQBIwFBAE4EQCMBQwAAAABDMzPTP0MAAAAAQwAAAABDAAAAABADCwtdAQF/QQBBABACQQEQAhAHIgBDAACgQV8gAEMAAAAAYHEhAUEAIAAQAEEBIAGyEABBAkEOEAIQACABIwJHBEAgASQCIAEQCUEoIAAQBAsgAQRAQcgBQwAAgD8QBQsLXQBBAUMK16M9QwAAwD9DCtejPUMAAEA/QwAAQD9DAABAPxABJAAjAEEATgRAIwBDAAAAAEMAAEA/QwAAAABDAAAAAEMAAAAAEAMLQQAQCUEAJAJBKUHUABAIshAECw==",
+ "finished": "2026-11-11T20:09:59.490Z",
+ "question_asked_before_build": false,
+ "question_fact_grounded": false,
+ "numbers_without_facts": {
+  "explanation": [
+   "-78 C",
+   "-26 C"
+  ]
+ }
+}

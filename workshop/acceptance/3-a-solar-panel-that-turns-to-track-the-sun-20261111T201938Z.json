@@ -1,0 +1,198 @@
+{
+ "prompt_number": 3,
+ "prompt": "A solar panel that turns to track the sun and reports its output.",
+ "started": "2026-11-11T20:14:27.903Z",
+ "git_head": "4eb4844960d109f1ade4e6a4479f68e60a4e1026",
+ "git_clean": false,
+ "turns": [
+  {
+   "request_messages": [
+    {
+     "role": "user",
+     "content": "A solar panel that turns to track the sun and reports its output."
+    }
+   ],
+   "status": 200,
+   "answer": {
+    "type": "questions",
+    "text": "A sun-tracking panel is a good build. One thing up front: the world doesn't give modules the sun's position or live sunlight yet. So your panel will steer by the local solar hour on the world clock, and work out its output from sourced numbers plus a few choices of yours. Three of those choices are worth making on purpose:\n\n**1. Which sunlight do you want to design for?** Mars's orbit is noticeably stretched [mars.orbit.eccentricity], so the sunlight reaching the top of the atmosphere changes a lot over the year:\n\n- about 713 W/m² at perihelion [mars.solar.constant_perihelion]\n- about 586 W/m² at mean distance [mars.solar.constant_mean]\n- about 490 W/m² at aphelion [mars.solar.constant_aphelion]\n\nDo you want a panel sized for the generous season, the lean one, or the average?\n\n**2. How much dust is in the sky?** In the clear season at Jezero the dust optical depth is around 0.4 [jezero.dust.optical_depth_background_my36]. During the January 2022 regional storm it peaked near 2 [jezero.dust.optical_depth_storm_jan2022].\n\n- Should the panel assume clear skies, or let you switch to storm conditions?\n- The index has no formula for how much light dust removes, so the dimming rule would be your labelled assumption. The textbook choice is that the direct beam fades exponentially with optical depth times path length.\n- Here's what makes this interesting: in a thick storm most of the light is scattered and comes from the whole sky, so turning to face the sun buys much less. Do you want the panel to know that and stop bothering to track when it's dusty?\n\n**3. One axis or two?** Jezero sits at about 18° N [jezero.location.landing_site], and Mars's axial tilt is 25.19° [mars.orbit.obliquity]. That means the sun's noon height shifts with the seasons, not just across the day.\n\n- A single-axis panel that swings east to west with the hour is simple and honest with the clock we have.\n- A two-axis panel would also need a fixed season, because the world clock doesn't carry one.\n\nWhich do you prefer?\n\nFinally, the panel's area and conversion efficiency aren't in the fact index. Tell me what you'd like (for example \"2 m² at 25%\"), and I'll show them in the inspector as your assumptions. Answer whichever of these you care about, and I'll pick sensible labelled defaults for the rest.",
+    "tries": 1
+   },
+   "at": "2026-11-11T20:14:47.445Z",
+   "after_failure": false
+  },
+  {
+   "request_messages": [
+    {
+     "role": "user",
+     "content": "A solar panel that turns to track the sun and reports its output."
+    },
+    {
+     "role": "assistant",
+     "content": "A sun-tracking panel is a good build. One thing up front: the world doesn't give modules the sun's position or live sunlight yet. So your panel will steer by the local solar hour on the world clock, and work out its output from sourced numbers plus a few choices of yours. Three of those choices are worth making on purpose:\n\n**1. Which sunlight do you want to design for?** Mars's orbit is noticeably stretched [mars.orbit.eccentricity], so the sunlight reaching the top of the atmosphere changes a lot over the year:\n\n- about 713 W/m² at perihelion [mars.solar.constant_perihelion]\n- about 586 W/m² at mean distance [mars.solar.constant_mean]\n- about 490 W/m² at aphelion [mars.solar.constant_aphelion]\n\nDo you want a panel sized for the generous season, the lean one, or the average?\n\n**2. How much dust is in the sky?** In the clear season at Jezero the dust optical depth is around 0.4 [jezero.dust.optical_depth_background_my36]. During the January 2022 regional storm it peaked near 2 [jezero.dust.optical_depth_storm_jan2022].\n\n- Should the panel assume clear skies, or let you switch to storm conditions?\n- The index has no formula for how much light dust removes, so the dimming rule would be your labelled assumption. The textbook choice is that the direct beam fades exponentially with optical depth times path length.\n- Here's what makes this interesting: in a thick storm most of the light is scattered and comes from the whole sky, so turning to face the sun buys much less. Do you want the panel to know that and stop bothering to track when it's dusty?\n\n**3. One axis or two?** Jezero sits at about 18° N [jezero.location.landing_site], and Mars's axial tilt is 25.19° [mars.orbit.obliquity]. That means the sun's noon height shifts with the seasons, not just across the day.\n\n- A single-axis panel that swings east to west with the hour is simple and honest with the clock we have.\n- A two-axis panel would also need a fixed season, because the world clock doesn't carry one.\n\nWhich do you prefer?\n\nFinally, the panel's area and conversion efficiency aren't in the fact index. Tell me what you'd like (for example \"2 m² at 25%\"), and I'll show them in the inspector as your assumptions. Answer whichever of these you care about, and I'll pick sensible labelled defaults for the rest."
+    },
+    {
+     "role": "user",
+     "content": "Design for the average sunlight. Clear skies, with the clear-season dust as the default, and yes, let it know that tracking buys little in a storm, as a labelled assumption. Single axis, swinging east to west with the hour. 2 square metres at 25 percent, as my assumptions."
+    }
+   ],
+   "status": 502,
+   "answer": {
+    "error": "the model's reply was cut off at max_tokens"
+   },
+   "at": "2026-11-11T20:17:35.597Z",
+   "after_failure": false
+  },
+  {
+   "request_messages": [
+    {
+     "role": "user",
+     "content": "A solar panel that turns to track the sun and reports its output."
+    },
+    {
+     "role": "assistant",
+     "content": "A sun-tracking panel is a good build. One thing up front: the world doesn't give modules the sun's position or live sunlight yet. So your panel will steer by the local solar hour on the world clock, and work out its output from sourced numbers plus a few choices of yours. Three of those choices are worth making on purpose:\n\n**1. Which sunlight do you want to design for?** Mars's orbit is noticeably stretched [mars.orbit.eccentricity], so the sunlight reaching the top of the atmosphere changes a lot over the year:\n\n- about 713 W/m² at perihelion [mars.solar.constant_perihelion]\n- about 586 W/m² at mean distance [mars.solar.constant_mean]\n- about 490 W/m² at aphelion [mars.solar.constant_aphelion]\n\nDo you want a panel sized for the generous season, the lean one, or the average?\n\n**2. How much dust is in the sky?** In the clear season at Jezero the dust optical depth is around 0.4 [jezero.dust.optical_depth_background_my36]. During the January 2022 regional storm it peaked near 2 [jezero.dust.optical_depth_storm_jan2022].\n\n- Should the panel assume clear skies, or let you switch to storm conditions?\n- The index has no formula for how much light dust removes, so the dimming rule would be your labelled assumption. The textbook choice is that the direct beam fades exponentially with optical depth times path length.\n- Here's what makes this interesting: in a thick storm most of the light is scattered and comes from the whole sky, so turning to face the sun buys much less. Do you want the panel to know that and stop bothering to track when it's dusty?\n\n**3. One axis or two?** Jezero sits at about 18° N [jezero.location.landing_site], and Mars's axial tilt is 25.19° [mars.orbit.obliquity]. That means the sun's noon height shifts with the seasons, not just across the day.\n\n- A single-axis panel that swings east to west with the hour is simple and honest with the clock we have.\n- A two-axis panel would also need a fixed season, because the world clock doesn't carry one.\n\nWhich do you prefer?\n\nFinally, the panel's area and conversion efficiency aren't in the fact index. Tell me what you'd like (for example \"2 m² at 25%\"), and I'll show them in the inspector as your assumptions. Answer whichever of these you care about, and I'll pick sensible labelled defaults for the rest."
+    },
+    {
+     "role": "user",
+     "content": "Design for the average sunlight. Clear skies, with the clear-season dust as the default, and yes, let it know that tracking buys little in a storm, as a labelled assumption. Single axis, swinging east to west with the hour. 2 square metres at 25 percent, as my assumptions."
+    },
+    {
+     "role": "user",
+     "content": "Please go ahead and build it now; keep the module and the explanation compact."
+    }
+   ],
+   "status": 200,
+   "answer": {
+    "type": "module",
+    "name": "sun_tracking_solar_panel",
+    "manifest": {
+     "name": "sun-tracking solar panel",
+     "description": "A 2 m2 panel on a post that swings east to west with the local solar hour and reports its electrical output. Clear-season dust by default; emit signal 200 = 1 for storm sky, and it parks flat whenever flat collects more.",
+     "version": 1,
+     "author": "design agent",
+     "state": [
+      {
+       "slot": 0,
+       "label": "electrical output",
+       "unit": "W"
+      },
+      {
+       "slot": 1,
+       "label": "panel tilt (+ east, - west)",
+       "unit": "deg"
+      },
+      {
+       "slot": 2,
+       "label": "sun elevation (equinox assumption)",
+       "unit": "deg"
+      },
+      {
+       "slot": 3,
+       "label": "dust optical depth in use",
+       "unit": "1"
+      },
+      {
+       "slot": 4,
+       "label": "tracking (1) or parked flat (0)",
+       "unit": "flag"
+      },
+      {
+       "slot": 5,
+       "label": "sunlight on panel",
+       "unit": "W/m^2"
+      }
+     ],
+     "signals": {
+      "emits": [
+       {
+        "code": 201,
+        "label": "panel output",
+        "unit": "W"
+       }
+      ],
+      "listens": [
+       {
+        "code": 200,
+        "label": "storm sky (1 = storm)",
+        "unit": "flag"
+       }
+      ]
+     },
+     "shapes": 2,
+     "fact_ids": [
+      "mars.solar.constant_mean",
+      "jezero.dust.optical_depth_background_my36",
+      "jezero.dust.optical_depth_storm_jan2022",
+      "jezero.location.landing_site"
+     ],
+     "did_you_know": {
+      "text": "During the January 2022 regional dust storm at Jezero, the sky's dust optical depth peaked near 2, about five times the clear-season value of roughly 0.4.",
+      "fact_id": "jezero.dust.optical_depth_storm_jan2022"
+     }
+    },
+    "source": "// Sun-tracking solar panel: single axis, swings east-west with the local solar hour.\n// Sunlight at the top of the atmosphere: fact(FACT_MARS_SOLAR_CONSTANT_MEAN) [mars.solar.constant_mean].\n// Dust: clear-season fact by default, storm fact when signal 200 reads 1.\n// ASSUMPTIONS (not facts): area 2 m2 and 25% efficiency (player); sun on the equator,\n// i.e. equinox (the world clock has no season); the direct beam fades as exp(-tau / cos zenith);\n// half the light the dust scatters still reaches the ground, evenly from the whole sky (DIFFUSE_K).\nimport { read, fact, spawn, pose, state_set, signal_emit, signal_read, log, ENV_LOCAL_HOUR, HEADING,\n         SHAPE_CYLINDER, SHAPE_BOX, FACT_MARS_SOLAR_CONSTANT_MEAN,\n         FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36, FACT_JEZERO_DUST_OPTICAL_DEPTH_STORM_JAN2022 } from \"./host\";\n\nconst AREA_M2: f32 = 2.0;          // player's assumption\nconst EFF: f32 = 0.25;             // player's assumption\nconst DIFFUSE_K: f32 = 0.5;        // design assumption: scattered share reaching the ground\nconst LAT_DEG: f32 = 18.0;         // Jezero, about 18 N [jezero.location.landing_site]; table record, fact() cannot read it\nconst SIG_STORM: i32 = 200;        // listens: 1 = storm sky\nconst SIG_POWER: i32 = 201;        // emits: output in W, every tick\nconst LOG_HOUR_W: i32 = 1;         // log code 1: output (W) at each new hour\nconst LOG_MODE: i32 = 2;           // log code 2: mode changed, 1 tracking / 0 parked flat\nconst DEG: f32 = 57.29578;         // radians to degrees (geometry, not Mars)\n\nlet post: i32 = -1, panel: i32 = -1;\nlet lastHour: i32 = -1, lastMode: i32 = -1;\nlet s0: f32 = 0, tauClear: f32 = 0, tauStorm: f32 = 0, cosLat: f32 = 1;\n\nexport function init(): void {\n  s0 = fact(FACT_MARS_SOLAR_CONSTANT_MEAN);                         // W/m^2\n  tauClear = fact(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36);\n  tauStorm = fact(FACT_JEZERO_DUST_OPTICAL_DEPTH_STORM_JAN2022);\n  cosLat = Mathf.cos(LAT_DEG / DEG);\n  post = spawn(SHAPE_CYLINDER, 0.1, 1.2, 0.1, 0.6, 0.6, 0.6);\n  pose(post, 0.0, 0.6, 0.0, 0.0, 0.0);\n  panel = spawn(SHAPE_BOX, 1.0, 0.05, 2.0, 0.1, 0.15, 0.45);       // 1 m N-S by 2 m E-W = 2 m2\n}\n\nexport function tick(dt: f32): void {\n  const hour = read(ENV_LOCAL_HOUR);\n  const h: f32 = (hour - 12.0) * (Mathf.PI / 12.0);   // hour angle: 24 solar hours per turn\n  const sE: f32 = -Mathf.sin(h);                      // sun's east component (morning > 0)\n  const sUp: f32 = cosLat * Mathf.cos(h);             // cos(zenith), equinox sun\n  const tau: f32 = signal_read(SIG_STORM) == 1.0 ? tauStorm : tauClear;\n\n  let beam: f32 = 0.0, diff: f32 = 0.0;\n  if (sUp > 0.01) {\n    const t = Mathf.exp(-tau / sUp);                  // beam transmission (assumption)\n    beam = s0 * t;                                    // W/m^2 facing the sun\n    diff = DIFFUSE_K * s0 * sUp * (1.0 - t);          // W/m^2 on flat ground, whole sky\n  }\n  // Best east-west tilt, and what it gains versus lying flat. Tilting sees less sky.\n  const rho: f32 = sUp > 0.01 ? Mathf.atan2(sE, sUp) : 0.0;\n  const gTrack: f32 = beam * Mathf.sqrt(sE * sE + sUp * sUp) + diff * (1.0 + Mathf.cos(rho)) * 0.5;\n  const gFlat: f32 = beam * (sUp > 0.0 ? sUp : 0.0) + diff;\n  const track: i32 = (sUp > 0.01 && gTrack > gFlat) ? 1 : 0;\n  const tilt: f32 = track == 1 ? rho : 0.0;\n  const g: f32 = track == 1 ? gTrack : gFlat;\n  const watts: f32 = g * AREA_M2 * EFF;\n\n  // Face the shape east in the world, then pitch about its north-south axis.\n  pose(panel, 0.0, 1.25, 0.0, -Mathf.PI * 0.5 - read(HEADING), tilt);\n\n  state_set(0, watts);\n  state_set(1, tilt * DEG);\n  state_set(2, sUp > 0.0 ? Mathf.asin(sUp) * DEG : 0.0);\n  state_set(3, tau);\n  state_set(4, <f32>track);\n  state_set(5, g);\n  signal_emit(SIG_POWER, watts);\n\n  const hr = <i32>Mathf.floor(hour);\n  if (hr != lastHour) { lastHour = hr; log(LOG_HOUR_W, watts); }\n  if (track != lastMode) { lastMode = track; log(LOG_MODE, <f32>track); }\n}\n",
+    "wasm": "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",
+    "explanation": "**What it does.** A 2 m² panel on a post tilts east in the morning and west in the afternoon, following the world's local solar hour. Every tick it computes the sunlight hitting it, shows its output in watts in the inspector, and broadcasts that output on signal 201 so other builds can use it. Emitting signal 200 = 1 switches the sky to storm dust.\n\n**Facts it rests on.**\n- Sunlight at the top of the atmosphere is the mean-distance value, 586 W/m² [mars.solar.constant_mean].\n- Dust optical depth is 0.4 by default [jezero.dust.optical_depth_background_my36], or 2 in storm mode [jezero.dust.optical_depth_storm_jan2022].\n- The sun's path uses Jezero's latitude of about 18° N [jezero.location.landing_site].\n\n**Tracking versus lying flat.** Each tick the panel compares tracking with lying flat and picks whichever collects more.\n- In clear skies it tracks. At 9 h it gets roughly 390 W/m² tracking against 305 W/m² flat.\n- In storm mode the direct beam is mostly gone, so it parks flat to see the whole glowing sky.\n\n**Your assumptions, labelled.**\n- The 2 m² area and 25% efficiency are your choices.\n- The design assumptions are:\n  - the sun is placed at equinox, because the clock has no season;\n  - the direct beam fades exponentially with dust times path length;\n  - half the scattered light reaches the ground evenly from the sky.\n\nNone of these assumptions are in the fact index. Expect about 240 W at clear noon.",
+    "fact_ids": [
+     "mars.solar.constant_mean",
+     "jezero.dust.optical_depth_background_my36",
+     "jezero.dust.optical_depth_storm_jan2022",
+     "jezero.location.landing_site"
+    ],
+    "report": "ok: 600 ticks, 4803 actuator calls, worst tick 0.972 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+    "tries": 1,
+    "log": [
+     {
+      "attempt": 1,
+      "ok": true,
+      "error": null,
+      "report": "ok: 600 ticks, 4803 actuator calls, worst tick 0.972 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+      "source": "// Sun-tracking solar panel: single axis, swings east-west with the local solar hour.\n// Sunlight at the top of the atmosphere: fact(FACT_MARS_SOLAR_CONSTANT_MEAN) [mars.solar.constant_mean].\n// Dust: clear-season fact by default, storm fact when signal 200 reads 1.\n// ASSUMPTIONS (not facts): area 2 m2 and 25% efficiency (player); sun on the equator,\n// i.e. equinox (the world clock has no season); the direct beam fades as exp(-tau / cos zenith);\n// half the light the dust scatters still reaches the ground, evenly from the whole sky (DIFFUSE_K).\nimport { read, fact, spawn, pose, state_set, signal_emit, signal_read, log, ENV_LOCAL_HOUR, HEADING,\n         SHAPE_CYLINDER, SHAPE_BOX, FACT_MARS_SOLAR_CONSTANT_MEAN,\n         FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36, FACT_JEZERO_DUST_OPTICAL_DEPTH_STORM_JAN2022 } from \"./host\";\n\nconst AREA_M2: f32 = 2.0;          // player's assumption\nconst EFF: f32 = 0.25;             // player's assumption\nconst DIFFUSE_K: f32 = 0.5;        // design assumption: scattered share reaching the ground\nconst LAT_DEG: f32 = 18.0;         // Jezero, about 18 N [jezero.location.landing_site]; table record, fact() cannot read it\nconst SIG_STORM: i32 = 200;        // listens: 1 = storm sky\nconst SIG_POWER: i32 = 201;        // emits: output in W, every tick\nconst LOG_HOUR_W: i32 = 1;         // log code 1: output (W) at each new hour\nconst LOG_MODE: i32 = 2;           // log code 2: mode changed, 1 tracking / 0 parked flat\nconst DEG: f32 = 57.29578;         // radians to degrees (geometry, not Mars)\n\nlet post: i32 = -1, panel: i32 = -1;\nlet lastHour: i32 = -1, lastMode: i32 = -1;\nlet s0: f32 = 0, tauClear: f32 = 0, tauStorm: f32 = 0, cosLat: f32 = 1;\n\nexport function init(): void {\n  s0 = fact(FACT_MARS_SOLAR_CONSTANT_MEAN);                         // W/m^2\n  tauClear = fact(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36);\n  tauStorm = fact(FACT_JEZERO_DUST_OPTICAL_DEPTH_STORM_JAN2022);\n  cosLat = Mathf.cos(LAT_DEG / DEG);\n  post = spawn(SHAPE_CYLINDER, 0.1, 1.2, 0.1, 0.6, 0.6, 0.6);\n  pose(post, 0.0, 0.6, 0.0, 0.0, 0.0);\n  panel = spawn(SHAPE_BOX, 1.0, 0.05, 2.0, 0.1, 0.15, 0.45);       // 1 m N-S by 2 m E-W = 2 m2\n}\n\nexport function tick(dt: f32): void {\n  const hour = read(ENV_LOCAL_HOUR);\n  const h: f32 = (hour - 12.0) * (Mathf.PI / 12.0);   // hour angle: 24 solar hours per turn\n  const sE: f32 = -Mathf.sin(h);                      // sun's east component (morning > 0)\n  const sUp: f32 = cosLat * Mathf.cos(h);             // cos(zenith), equinox sun\n  const tau: f32 = signal_read(SIG_STORM) == 1.0 ? tauStorm : tauClear;\n\n  let beam: f32 = 0.0, diff: f32 = 0.0;\n  if (sUp > 0.01) {\n    const t = Mathf.exp(-tau / sUp);                  // beam transmission (assumption)\n    beam = s0 * t;                                    // W/m^2 facing the sun\n    diff = DIFFUSE_K * s0 * sUp * (1.0 - t);          // W/m^2 on flat ground, whole sky\n  }\n  // Best east-west tilt, and what it gains versus lying flat. Tilting sees less sky.\n  const rho: f32 = sUp > 0.01 ? Mathf.atan2(sE, sUp) : 0.0;\n  const gTrack: f32 = beam * Mathf.sqrt(sE * sE + sUp * sUp) + diff * (1.0 + Mathf.cos(rho)) * 0.5;\n  const gFlat: f32 = beam * (sUp > 0.0 ? sUp : 0.0) + diff;\n  const track: i32 = (sUp > 0.01 && gTrack > gFlat) ? 1 : 0;\n  const tilt: f32 = track == 1 ? rho : 0.0;\n  const g: f32 = track == 1 ? gTrack : gFlat;\n  const watts: f32 = g * AREA_M2 * EFF;\n\n  // Face the shape east in the world, then pitch about its north-south axis.\n  pose(panel, 0.0, 1.25, 0.0, -Mathf.PI * 0.5 - read(HEADING), tilt);\n\n  state_set(0, watts);\n  state_set(1, tilt * DEG);\n  state_set(2, sUp > 0.0 ? Mathf.asin(sUp) * DEG : 0.0);\n  state_set(3, tau);\n  state_set(4, <f32>track);\n  state_set(5, g);\n  signal_emit(SIG_POWER, watts);\n\n  const hr = <i32>Mathf.floor(hour);\n  if (hr != lastHour) { lastHour = hr; log(LOG_HOUR_W, watts); }\n  if (track != lastMode) { lastMode = track; log(LOG_MODE, <f32>track); }\n}\n",
+      "manifestText": "{\n  \"name\": \"sun-tracking solar panel\",\n  \"description\": \"A 2 m2 panel on a post that swings east to west with the local solar hour and reports its electrical output. Clear-season dust by default; emit signal 200 = 1 for storm sky, and it parks flat whenever flat collects more.\",\n  \"version\": 1,\n  \"author\": \"design agent\",\n  \"state\": [\n    { \"slot\": 0, \"label\": \"electrical output\", \"unit\": \"W\" },\n    { \"slot\": 1, \"label\": \"panel tilt (+ east, - west)\", \"unit\": \"deg\" },\n    { \"slot\": 2, \"label\": \"sun elevation (equinox assumption)\", \"unit\": \"deg\" },\n    { \"slot\": 3, \"label\": \"dust optical depth in use\", \"unit\": \"1\" },\n    { \"slot\": 4, \"label\": \"tracking (1) or parked flat (0)\", \"unit\": \"flag\" },\n    { \"slot\": 5, \"label\": \"sunlight on panel\", \"unit\": \"W/m^2\" }\n  ],\n  \"signals\": {\n    \"emits\": [ { \"code\": 201, \"label\": \"panel output\", \"unit\": \"W\" } ],\n    \"listens\": [ { \"code\": 200, \"label\": \"storm sky (1 = storm)\", \"unit\": \"flag\" } ]\n  },\n  \"shapes\": 2,\n  \"fact_ids\": [\n    \"mars.solar.constant_mean\",\n    \"jezero.dust.optical_depth_background_my36\",\n    \"jezero.dust.optical_depth_storm_jan2022\",\n    \"jezero.location.landing_site\"\n  ],\n  \"did_you_know\": {\n    \"text\": \"During the January 2022 regional dust storm at Jezero, the sky's dust optical depth peaked near 2, about five times the clear-season value of roughly 0.4.\",\n    \"fact_id\": \"jezero.dust.optical_depth_storm_jan2022\"\n  }\n}"
+     }
+    ]
+   },
+   "at": "2026-11-11T20:19:38.804Z",
+   "after_failure": true
+  }
+ ],
+ "questions": [
+  {
+   "text": "A sun-tracking panel is a good build. One thing up front: the world doesn't give modules the sun's position or live sunlight yet. So your panel will steer by the local solar hour on the world clock, and work out its output from sourced numbers plus a few choices of yours. Three of those choices are worth making on purpose:\n\n**1. Which sunlight do you want to design for?** Mars's orbit is noticeably stretched [mars.orbit.eccentricity], so the sunlight reaching the top of the atmosphere changes a lot over the year:\n\n- about 713 W/m² at perihelion [mars.solar.constant_perihelion]\n- about 586 W/m² at mean distance [mars.solar.constant_mean]\n- about 490 W/m² at aphelion [mars.solar.constant_aphelion]\n\nDo you want a panel sized for the generous season, the lean one, or the average?\n\n**2. How much dust is in the sky?** In the clear season at Jezero the dust optical depth is around 0.4 [jezero.dust.optical_depth_background_my36]. During the January 2022 regional storm it peaked near 2 [jezero.dust.optical_depth_storm_jan2022].\n\n- Should the panel assume clear skies, or let you switch to storm conditions?\n- The index has no formula for how much light dust removes, so the dimming rule would be your labelled assumption. The textbook choice is that the direct beam fades exponentially with optical depth times path length.\n- Here's what makes this interesting: in a thick storm most of the light is scattered and comes from the whole sky, so turning to face the sun buys much less. Do you want the panel to know that and stop bothering to track when it's dusty?\n\n**3. One axis or two?** Jezero sits at about 18° N [jezero.location.landing_site], and Mars's axial tilt is 25.19° [mars.orbit.obliquity]. That means the sun's noon height shifts with the seasons, not just across the day.\n\n- A single-axis panel that swings east to west with the hour is simple and honest with the clock we have.\n- A two-axis panel would also need a fixed season, because the world clock doesn't carry one.\n\nWhich do you prefer?\n\nFinally, the panel's area and conversion efficiency aren't in the fact index. Tell me what you'd like (for example \"2 m² at 25%\"), and I'll show them in the inspector as your assumptions. Answer whichever of these you care about, and I'll pick sensible labelled defaults for the rest.",
+   "fact_ids": [
+    "mars.orbit.eccentricity",
+    "mars.solar.constant_perihelion",
+    "mars.solar.constant_mean",
+    "mars.solar.constant_aphelion",
+    "jezero.dust.optical_depth_background_my36",
+    "jezero.dust.optical_depth_storm_jan2022",
+    "jezero.location.landing_site",
+    "mars.orbit.obliquity"
+   ],
+   "fact_ids_other_punctuation": [],
+   "numbers_without_facts": [
+    "25 %"
+   ]
+  }
+ ],
+ "model": "claude-opus-5-5",
+ "system_sha256": "3cc2a5f65e70d05ca68a75c1a08506751cda5bfd9d37277bd324d85ef4e674a7",
+ "system_bytes": 82486,
+ "facts_in_prompt": 77,
+ "result": "error 502",
+ "error": "the model's reply was cut off at max_tokens",
+ "after_failure_turn": {
+  "status": 200,
+  "type": "module",
+  "kept_declined_turn_in_history": true
+ },
+ "finished": "2026-11-11T20:19:38.806Z",
+ "question_asked_before_build": true,
+ "question_fact_grounded": true,
+ "numbers_without_facts": {
+  "question 1": [
+   "25 %"
+  ]
+ }
+}
