@@ -215,6 +215,8 @@ mars-sandbox/                  one repo, one version
 └── (MVP adds)
     ├── runtime/               multi-module sandbox runtime, manifest loader, clock.mjs (world clock + diurnal lookup)
     ├── workshop/              Node (TypeScript) server: prompt from the shared files, Claude API, asc compile, smoke test, retry (W1)
+    │   └── acceptance/        the A1 runner (npm run acceptance) and the recorded transcripts
+    ├── test/acceptance/       the offline behaviour checks and judge for the five acceptance objects (node test/acceptance/judge.mjs)
     └── web/workshop.mjs       the workshop panel + inspector (W2), bundled by pack.mjs
 ```
 
@@ -257,6 +259,8 @@ MVP adds:
 ```
 cp .env.example .env             # ANTHROPIC_API_KEY=...  (gitignored, never committed)
 npm run workshop                 # Node server on :8787
+npm run acceptance               # A1: the five prompts against the real model, transcripts under workshop/acceptance/
+node test/acceptance/judge.mjs   # judge recorded transcripts offline (rebuild, smoke test, behaviour check)
 ```
 
 ---

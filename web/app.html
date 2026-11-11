@@ -473,7 +473,17 @@ const workshop = createWorkshopPanel({
   index: factIndex ?? { facts: {}, sources: {}, tier_order: [] }, workshopUrl, place: placeFromWorkshop, log: logLine,
 });
 let inspected = null;
+function removeObject(id) {
+  if (id === ROVER_ID) return;
+  registry.remove(id); explanations.delete(id);
+  const m = markers.get(id); if (m) { m.removeFromParent(); markers.delete(id); }
+  for (const [key, mesh] of shapeMeshes) if (key.startsWith(id + "/")) { mesh.geometry.dispose(); mesh.material.dispose(); shapeMeshes.delete(key); }
+  if (inspected === id) inspected = null;
+  renderObjects(); renderInspector();
+}
 function renderObjects() {
+  const live = new Set(registry.list().map(o => o.id));
+  for (const id of explanations.keys()) if (!live.has(id)) explanations.delete(id);   // an object removed by any path takes its explanation with it
   const C = el("objects"); C.innerHTML = "";
   for (const o of registry.list()) {
     const c = document.createElement("button"); c.className = "chip" + (o.id === inspected ? " sel" : "");
@@ -500,7 +510,7 @@ function refreshInspector() {
 }
 el("ws-thread").addEventListener("click", e => { const t = e.target.closest("[data-object]"); if (t) openInspector(t.dataset.object); });
 renderObjects();
-window.sandbox.workshop = workshop; window.sandbox.inspect = openInspector; window.sandbox.placeFromWorkshop = placeFromWorkshop; window.sandbox.explanations = explanations;
+window.sandbox.workshop = workshop; window.sandbox.inspect = openInspector; window.sandbox.placeFromWorkshop = placeFromWorkshop; window.sandbox.explanations = explanations; window.sandbox.removeObject = removeObject;
 
 // ------------------------------------------------------------------ UI
 let selected = BEHAVIORS[0].name;

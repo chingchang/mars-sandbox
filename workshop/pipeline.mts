@@ -78,7 +78,7 @@ export function slug(name: unknown): string {
   return s || "module";
 }
 
-export type Attempt = { attempt: number; ok: boolean; error: string | null; report: string | null };
+export type Attempt = { attempt: number; ok: boolean; error: string | null; report: string | null; source: string; manifestText: string };
 export type WorkshopResult =
   | { type: "questions"; text: string; tries: number }
   | { type: "module"; name: string; manifest: Manifest; source: string; wasm: string; explanation: string; fact_ids: string[]; report: string; tries: number; log: Attempt[] }
@@ -102,7 +102,7 @@ export async function runWorkshop({ messages, llm, tries = DEFAULT_TRIES, index 
     let error: string | null = problems.length ? "MODULE CHECK FAILED:\n- " + problems.join("\n- ") : null;
     let built: BuildResult | null = null;
     if (!error) { built = await build(reply.source); if (!built.ok) error = built.error; }
-    log.push({ attempt, ok: !error, error, report: built?.ok ? built.report : null });
+    log.push({ attempt, ok: !error, error, report: built?.ok ? built.report : null, source: reply.source, manifestText: reply.manifestText });   // the full record of every try, failed ones included
     if (built?.ok && manifest) {
       return {
         type: "module", name: slug(manifest.name), manifest, source: reply.source, wasm: Buffer.from(built.wasm).toString("base64"),

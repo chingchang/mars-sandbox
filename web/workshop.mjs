@@ -68,7 +68,9 @@ export async function askWorkshop(url, messages, { fetchImpl = fetch, tries } = 
   if (body.type === "module") {
     const bad = moduleAnswerProblem(body);
     if (bad) return { kind: "error", message: `the workshop's answer was malformed (${bad}); nothing was loaded` };
-    return { kind: "module", ...body, tries: toCount(body.tries), fact_ids: Array.isArray(body.fact_ids) ? body.fact_ids.filter(x => typeof x === "string") : [] };
+    // fields picked by name: a body with its own `kind` (or anything else) cannot change what the panel does with it
+    return { kind: "module", name: body.name, manifest: body.manifest, source: typeof body.source === "string" ? body.source : "", wasm: body.wasm, explanation: body.explanation ?? "", report: body.report ?? "",
+      tries: toCount(body.tries), log: Array.isArray(body.log) ? body.log : [], fact_ids: Array.isArray(body.fact_ids) ? body.fact_ids.filter(x => typeof x === "string") : [] };
   }
   if (body.type === "failed") return { kind: "failed", error: String(body.error ?? ""), tries: toCount(body.tries), log: Array.isArray(body.log) ? body.log : [] };
   return { kind: "error", message: "unexpected answer from the workshop" };
