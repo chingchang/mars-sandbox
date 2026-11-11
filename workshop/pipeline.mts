@@ -24,10 +24,28 @@ export function parseReply(text: string): ParsedReply {
 
 export type Manifest = { name: string; fact_ids?: string[]; did_you_know?: { fact_id: string } } & Record<string, unknown>;
 
-/** Every module specifier in the source, whatever the statement: import x from "p", import "p", import("p"), export * from "p", export { a } from "p", require("p"), /// <reference path="p">. */
+/** The source without its comments (string and template literals kept intact), so a comment cannot hide or fake a module specifier. */
+export function stripComments(source: string): string {
+  let out = "", i = 0;
+  const n = source.length;
+  while (i < n) {
+    const c = source[i], d = source[i + 1];
+    if (c === "/" && d === "/") { while (i < n && source[i] !== "\n") i++; continue; }
+    if (c === "/" && d === "*") { const end = source.indexOf("*/", i + 2); i = end < 0 ? n : end + 2; out += " "; continue; }
+    if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1;
+      while (j < n && source[j] !== c) { if (source[j] === "\\") j++; if (c !== "`" && source[j] === "\n") break; j++; }
+      out += source.slice(i, j + 1); i = j + 1; continue;
+    }
+    out += c; i++;
+  }
+  return out;
+}
+
+/** Every module specifier in the source, whatever the statement: import x from "p", import "p", import("p"), export * from "p", export { a } from "p", require("p"), /// <reference path="p">. Comments are ignored, except the reference directive. */
 export function moduleSpecifiers(source: string): string[] {
   const out: string[] = [];
-  for (const m of source.matchAll(/\b(?:import|from|require)\s*\(?\s*["'`]([^"'`\n]*)["'`]/g)) out.push(m[1]);
+  for (const m of stripComments(source).matchAll(/\b(?:import|from|require)\s*\(?\s*["'`]([^"'`\n]*)["'`]/g)) out.push(m[1]);
   for (const m of source.matchAll(/\/\/\/\s*<reference\s+path\s*=\s*["']([^"']*)["']/g)) out.push(m[1]);
   return out;
 }

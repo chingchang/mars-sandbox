@@ -14,7 +14,7 @@ export const PATTERNS = [
   [/\bgh[pousr]_[A-Za-z0-9]{36,}\b/, "GitHub token"],
   [/\bxox[baprs]-[A-Za-z0-9-]{10,}/, "Slack token"],
   [/-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/, "private key block"],
-  [/\b[A-Za-z_]*(?:api_key|apikey|secret|token)\s*[=:]\s*["']?[A-Za-z0-9_\-]{16,}/i, "a key or token assigned a value in a file"],
+  [/\b[A-Za-z_]*(?:api_key|apikey|secret|token)\s*[=:]\s*["']?[A-Za-z0-9_\-]{16,}["']?\s*[,;)]?\s*$/i, "a key or token assigned a literal value in a file"],   // a value, not a call or expression
 ];
 const SKIP_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".wasm", ".pdf", ".zip", ".gz", ".ico", ".woff", ".woff2", ".ttf", ".tif", ".tiff", ".img", ".lbl"]);
 const MAX_BYTES = 4 << 20;

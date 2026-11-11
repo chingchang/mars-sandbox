@@ -10,7 +10,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { buildSystemPrompt, factKeyName, factLines, liveFactIds, principles, readIndex, readKeys, REPLY_PROTOCOL } from "../workshop/prompt.mts";
-import { checkModule, MARKERS, moduleSpecifiers, parseReply, runWorkshop, slug } from "../workshop/pipeline.mts";
+import { checkModule, MARKERS, moduleSpecifiers, parseReply, runWorkshop, slug, stripComments } from "../workshop/pipeline.mts";
 import { compileAndTest, compileSource } from "../workshop/compile.mts";
 import { createWorkshopServer, hostAllowed, originAllowed, parseConversation } from "../workshop/server.mts";
 import { scanRepo, scanText } from "../scripts/check_secrets.mjs";
@@ -94,7 +94,12 @@ test("static check: every foreign module specifier form is refused before the co
     side_effect: 'import "../../outside/victim";', star: 'export * from "../../outside/victim";', named: 'export { read } from "../../outside/victim";',
     default_import: 'import victim from "../../outside/victim";', dynamic: 'const v = import("../../outside/victim");', absolute: 'import { x } from "/etc/hostname";',
     reference: '/// <reference path="../../outside/victim.ts" />', require: 'const v = require("../../outside/victim");',
+    comment_between: 'export * from/**/"../../outside/victim";', comment_between2: 'import /* x */ "../../outside/victim";',
+    newline_between: 'import { x }\nfrom\n"../../outside/victim";',
   };
+  assert.equal(stripComments('const a = "http://x//y"; // from "../z"\nlet b = `t // ${1}`; /* from "../w" */ let c = 2;'), 'const a = "http://x//y"; \nlet b = `t // ${1}`;   let c = 2;');
+  assert.deepEqual(moduleSpecifiers('// reads the dust value from "the sky"\nimport { read } from "./host";'), ["./host"], "a comment cannot fake a specifier");
+  assert.deepEqual(moduleSpecifiers(STATION_SRC.replace('from "./host"', 'from /* c */ "./host"')), ["./host"], "or hide one");
   assert.deepEqual(moduleSpecifiers(STATION_SRC), ["./host"]);
   assert.deepEqual(moduleSpecifiers('export * from "./host";\nimport "./host";'), ["./host", "./host"]);
   for (const [name, line] of Object.entries(forms)) {
@@ -115,7 +120,9 @@ test("compiler sandbox: even with the static check bypassed, a file outside the 
     const victim = path.join(dir, "victim.ts");
     writeFileSync(victim, `const leak: i32 = "${marker}";\n`);                 // a type error that would quote this line if the compiler read it
     const rel = path.relative(process.cwd(), victim).replace(/\.ts$/, "");
-    for (const [name, line] of [["absolute", `import "${victim.replace(/\.ts$/, "")}";`], ["relative", `import "${rel.startsWith(".") ? rel : "./" + rel}";`], ["star", `export * from "${victim.replace(/\.ts$/, "")}";`]]) {
+    const v = victim.replace(/\.ts$/, "");
+    for (const [name, line] of [["absolute", `import "${v}";`], ["relative", `import "${rel.startsWith(".") ? rel : "./" + rel}";`], ["star", `export * from "${v}";`],
+      ["comment_between", `export * from/**/"${v}";`], ["comment_between2", `import /* x */ "${v}";`]]) {
       const r = await compileAndTest(line + "\n" + STATION_SRC);
       assert.equal(r.ok, false, name);
       assert.match(r.error, /not found/, name);
@@ -124,6 +131,43 @@ test("compiler sandbox: even with the static check bypassed, a file outside the 
     const c = await compileSource(STATION_SRC);
     assert.ok(c.ok); assert.ok(Buffer.compare(Buffer.from(c.wasm), readFileSync(new URL("build/weather_station.wasm", root))) === 0, "in-memory compile matches build.sh byte for byte");
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+const FREEZE_SRC = 'import { state_set } from "./host";\n@inline function r(n: i32): i32 { return r(n + 1) + r(n + 2); }\nexport function init(): void {}\nexport function tick(dt: f32): void { state_set(0, <f32>r(0)); }\n';
+const manyCalls = n => 'import { state_set } from "./host";\nexport function init(): void {}\n' + Array.from({ length: n }, (_, i) => `function g${i}(): i32 { return ${i}; }`).join("\n") +
+  `\nexport function tick(dt: f32): void { let s: i32 = ${Array.from({ length: n }, (_, i) => `g${i}()`).join(" + ")}; state_set(0, <f32>s); }\n`;
+const DEEP_SRC = 'import { state_set } from "./host";\nexport function init(): void {}\nexport function tick(dt: f32): void { let s: i32 = ' + "(".repeat(30000) + "1" + ")".repeat(30000) + "; state_set(0, <f32>s); }\n";
+
+test("compiler limits: a source that freezes, crashes or overflows the compiler is a compiler error, and other compiles go on meanwhile", async () => {
+  const t0 = Date.now();
+  const [frozen, station] = await Promise.all([compileAndTest(FREEZE_SRC, undefined, { timeoutMs: 3000 }), compileAndTest(STATION_SRC)]);
+  const took = Date.now() - t0;
+  assert.equal(frozen.ok, false); assert.match(frozen.error, /^COMPILER ERROR:/); assert.match(frozen.error, /did not finish within 3 s/);
+  assert.ok(took >= 2900 && took < 8000, `the freeze was cut at the limit (${took} ms)`);
+  assert.ok(station.ok, "a compile started beside the frozen one finished normally");
+  const crashed = await compileAndTest(manyCalls(10000));
+  assert.equal(crashed.ok, false); assert.match(crashed.error, /^COMPILER ERROR:/); assert.match(crashed.error, /crashed and stopped|crashed:|ran out of memory/);
+  const deep = await compileAndTest(DEEP_SRC);
+  assert.equal(deep.ok, false); assert.match(deep.error, /^COMPILER ERROR:/); assert.match(deep.error, /the compiler threw: Maximum call stack size exceeded/);
+  const c = await compileSource(STATION_SRC);
+  assert.ok(c.ok && Buffer.compare(Buffer.from(c.wasm), readFileSync(new URL("build/weather_station.wasm", root))) === 0, "the compiler still matches build.sh afterwards");
+});
+
+test("HTTP: the server answers /health while a compile is frozen, and the request gets a normal failed answer", async () => {
+  const { llm } = recorded([moduleReply(STATION_MANIFEST, FREEZE_SRC)]);
+  const server = createWorkshopServer({ llm, index, keys, build: src => compileAndTest(src, undefined, { timeoutMs: 3000 }) });
+  await new Promise(r => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const t0 = Date.now();
+    const pending = fetch(base + "/workshop", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "x" }], tries: 1 }) });
+    await new Promise(r => setTimeout(r, 500));
+    const h0 = Date.now(); const health = await fetch(base + "/health"); const hTook = Date.now() - h0;
+    assert.equal(health.status, 200); assert.ok(hTook < 1000, `/health answered in ${hTook} ms while the compile was stuck`);
+    const res = await pending; const json = await res.json();
+    assert.equal(res.status, 200); assert.equal(json.type, "failed"); assert.match(json.error, /did not finish within 3 s/);
+    assert.ok(Date.now() - t0 < 8000);
+  } finally { server.close(); }
 });
 
 test("recorded conversation: the agent asks first, then builds the weather station through asc and the smoke test", async () => {
@@ -262,7 +306,7 @@ test("HTTP: POST /workshop answers with questions or a module; bad requests are 
 test("check:secrets: finds key shapes built at run time, passes on this repo, flags a tracked .env", () => {
   const fake = ["sk-ant-" + "a".repeat(40), "AKIA" + "Q".repeat(16), "ghp_" + "z".repeat(36), "ANTHROPIC_API_KEY=" + "k".repeat(24), ["-----BEGIN", "RSA PRIVATE", "KEY-----"].join(" "),
     "sk-proj-" + "Ab_-".repeat(8), 'api_key = "' + "q".repeat(20) + '"', "openai_api_key: " + "w".repeat(32)];   // every fixture is built at run time so the scanner does not flag this file
-  const hits = scanText(["const a = 1;", ...fake, "ANTHROPIC_API_KEY=", "WORKSHOP_MODEL="].join("\n"));
+  const hits = scanText(["const a = 1;", ...fake, "ANTHROPIC_API_KEY=", "WORKSHOP_MODEL=", "const token = readTokenFromEnvironment();", "apiKey = process.env.ANTHROPIC_API_KEY,"].join("\n"));
   assert.equal(hits.length, fake.length, JSON.stringify(hits));
   assert.deepEqual(hits.map(h => h.line), [2, 3, 4, 5, 6, 7, 8, 9]);
   assert.ok(hits.every(h => h.sample.length <= 15), "samples are truncated");
