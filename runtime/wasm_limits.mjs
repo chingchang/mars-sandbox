@@ -4,18 +4,27 @@
 // memory (id 5) sections are parsed directly.
 //
 // The policy bounds everything a module can allocate:
+//   - the binary itself is at most MAX_MODULE_BYTES. Every declaration a module
+//     can repeat (functions, globals, data and element segments, exports) costs
+//     engine memory in proportion to the binary, measured at up to ~25x, so one
+//     cap on the binary bounds all of them together;
 //   - exactly one linear memory (or none), not imported, 32-bit, with a declared
 //     maximum of at most MAX_MEMORY_PAGES (multi-memory would be a second door);
 //   - only plain function types in the type section: no struct, array, rec or
 //     sub types, so no WasmGC allocation is possible;
-//   - any table must declare a maximum of at most MAX_TABLE_ELEMENTS and may not
-//     be imported (a growing funcref table is memory too).
+//   - at most MAX_TABLES tables (each declared table costs ~9 KB of engine
+//     memory for a 6-byte declaration, the one count that does not scale with
+//     the binary), each with a maximum of at most MAX_TABLE_ELEMENTS, not
+//     imported (a growing funcref table is memory too).
 // Limits flags: 0 = min only, 1 = min+max, 2/3 = shared (memory only), bit 0x04
 // = 64-bit. 64-bit limits are u64 and would wrap a u32 reader, so the flag is
 // rejected outright rather than misread.
 export const FLAG_64 = 0x04;
 export const MAX_TABLE_ELEMENTS = 256;
+export const MAX_TABLES = 1;
+export const MAX_MODULE_BYTES = 1 << 20;   // 1 MiB; the largest sample is 2.3 KB
 const FUNC_TYPE = 0x60;
+const TABLE_WITH_INIT = 0x40;              // function-references encoding: 0x40 0x00 reftype limits expr
 
 export function inspectModule(bytes) {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -32,7 +41,7 @@ export function inspectModule(bytes) {
     return { min, max, imported, flag };
   };
   const name = () => { const n = u32(); p += n; };
-  const out = { memories: [], tables: [], nonFunctionTypes: 0, typeCount: 0 };
+  const out = { bytes: u8.length, memories: [], tables: [], nonFunctionTypes: 0, typeCount: 0 };
   while (p < u8.length) {
     const id = u8[p++], size = u32(), end = p + size;
     if (end > u8.length) throw new Error("truncated section");
@@ -56,7 +65,10 @@ export function inspectModule(bytes) {
       }
     } else if (id === 4) {
       const count = u32();
-      for (let i = 0; i < count; i++) { valtype(); out.tables.push(limits("table", false)); }
+      for (let i = 0; i < count; i++) {
+        if (u8[p] === TABLE_WITH_INIT) throw new Error("table with an initialiser expression is not allowed");  // its expr cannot be skipped safely; no toolchain we support emits it
+        valtype(); out.tables.push(limits("table", false));
+      }
     } else if (id === 5) {
       const count = u32();
       for (let i = 0; i < count; i++) out.memories.push(limits("memory", false));
@@ -69,8 +81,16 @@ export function inspectModule(bytes) {
 /** Every linear memory the module declares or imports (kept for callers that only care about memory). */
 export function memoryLimits(bytes) { return inspectModule(bytes).memories; }
 
+/** Size check alone, so the registry can refuse a binary before copying it or starting a worker; null if acceptable. */
+export function sizePolicy(byteLength, maxBytes = MAX_MODULE_BYTES) {
+  return byteLength > maxBytes ? `module is ${byteLength} bytes, ceiling is ${maxBytes}` : null;
+}
+
 /** Apply the sandbox's resource policy; returns null if acceptable, else the reason. */
-export function memoryPolicy(bytes, maxPages, maxTable = MAX_TABLE_ELEMENTS) {
+export function memoryPolicy(bytes, maxPages, maxTable = MAX_TABLE_ELEMENTS, maxTables = MAX_TABLES, maxBytes = MAX_MODULE_BYTES) {
+  const len = bytes instanceof Uint8Array ? bytes.length : bytes.byteLength;
+  const tooBig = sizePolicy(len, maxBytes);
+  if (tooBig) return tooBig;
   let m;
   try { m = inspectModule(bytes); } catch (e) { return e.message; }
   if (m.nonFunctionTypes > 0) return `module declares ${m.nonFunctionTypes} non-function type(s) (struct, array, rec or sub); only plain function types are allowed`;
@@ -81,6 +101,7 @@ export function memoryPolicy(bytes, maxPages, maxTable = MAX_TABLE_ELEMENTS) {
     if (mem.max === null) return "module declares no maximum memory (compile with --maximumMemory)";
     if (mem.max > maxPages) return `module declares maximum memory ${mem.max} pages, ceiling is ${maxPages}`;
   }
+  if (m.tables.length > maxTables) return `module declares ${m.tables.length} tables, ceiling is ${maxTables}`;
   for (const t of m.tables) {
     if (t.imported) return "imported table is not allowed";
     if (t.max === null) return "table declares no maximum size";

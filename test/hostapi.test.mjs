@@ -7,7 +7,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { Registry, nodeSpawner, SENSOR_COUNT, MAX_SHAPES, MAX_MEMORY_PAGES } from "../runtime/registry.mjs";
 import { buildFactTable } from "../runtime/facts.mjs";
 import { validateManifest } from "../runtime/manifest.mjs";
-import { memoryLimits, memoryPolicy } from "../runtime/wasm_limits.mjs";
+import { memoryLimits, memoryPolicy, sizePolicy, MAX_MODULE_BYTES, MAX_TABLES } from "../runtime/wasm_limits.mjs";
 
 const read = p => readFileSync(new URL(p, import.meta.url));
 const wasm = name => read(`../build/${name}.wasm`);
@@ -186,6 +186,49 @@ test("resource policy: GC types and unbounded or large tables are rejected; a sm
   await reg.load("tok", { name: "tok", bytes: TABLE_OK });
   assert.ok(reg.enabled("tok"), "a bounded 10-entry table is allowed");
   reg.unload("tok");
+});
+
+// many small bounded tables: each one is within the per-table ceiling, the count is the hole (third review)
+const TWO_TABLES = assemble(S_TYPE_FUNC, S_FUNCS, [4, [2, 0x70, 1, 1, 10, 0x70, 1, 1, 10]], S_MEM, S_EXPORTS, S_CODE);   // (table 1 10 funcref) x2
+const tablesSection = n => { const body = [n & 0x7f | 0x80, n >> 7]; for (let i = 0; i < n; i++) body.push(0x70, 1, 1, 10); return [4, body]; };
+const MANY_TABLES = (() => { const [id, body] = tablesSection(1000); const len = body.length;                             // 4 KB section: a 2-byte LEB size
+  return Uint8Array.from([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0, ...[S_TYPE_FUNC, S_FUNCS].flatMap(([i, b]) => [i, b.length, ...b]), id, len & 0x7f | 0x80, len >> 7, ...body,
+    ...[S_MEM, S_EXPORTS, S_CODE].flatMap(([i, b]) => [i, b.length, ...b])]); })();
+const TABLE_INIT_ENC = assemble(S_TYPE_FUNC, S_FUNCS, [4, [1, 0x40, 0x00, 0x70, 1, 1, 10, 0xd0, 0x70, 0x0b]], S_MEM, S_EXPORTS, S_CODE); // 0x40 0x00 encoding with (ref.null func)
+/** A valid module padded past the size ceiling with one custom section (id 0, empty name). */
+const oversize = base => { const size = MAX_MODULE_BYTES + 1 - base.length - 4;                   // id byte + 3-byte LEB size + section body = ceiling + 1
+  const leb = []; let v = size; do { let b = v & 0x7f; v >>>= 7; if (v) b |= 0x80; leb.push(b); } while (v);
+  assert.equal(leb.length, 3);
+  const out = new Uint8Array(base.length + 1 + leb.length + size); out.set(base); out[base.length] = 0; out.set(leb, base.length + 1); out[base.length + 1 + leb.length] = 0; return out; };
+const OVERSIZE = oversize(TABLE_OK);
+
+test("resource policy: the table count and the module size are capped; an oversize module never reaches a worker", async () => {
+  assert.equal(MAX_TABLES, 1);
+  assert.match(memoryPolicy(TWO_TABLES, MAX_MEMORY_PAGES), /declares 2 tables, ceiling is 1/);
+  assert.match(memoryPolicy(MANY_TABLES, MAX_MEMORY_PAGES), /declares 1000 tables, ceiling is 1/);
+  assert.match(memoryPolicy(TABLE_INIT_ENC, MAX_MEMORY_PAGES), /initialiser expression is not allowed/);
+  assert.equal(OVERSIZE.length, MAX_MODULE_BYTES + 1);
+  assert.match(sizePolicy(OVERSIZE.length), /ceiling is 1048576/);
+  assert.equal(sizePolicy(MAX_MODULE_BYTES), null, "exactly the ceiling is allowed");
+  assert.match(memoryPolicy(OVERSIZE, MAX_MEMORY_PAGES), /module is 1048577 bytes, ceiling is 1048576/);
+  assert.equal(memoryPolicy(OVERSIZE.subarray(0, TABLE_OK.length), MAX_MEMORY_PAGES), null, "the same module without the padding passes");
+  for (const name of ["patrol", "return_home", "seek_target", "runaway", "nonfinite", "memhog", "weather_station", "beacon", "churn"]) {
+    assert.ok(wasm(name).length < 4096 && memoryPolicy(wasm(name), MAX_MEMORY_PAGES) === null, `${name} passes the policy`);
+  }
+  const { reg, events } = makeWorld();
+  let spawned = 0; const inner = reg.spawnWorker; reg.spawnWorker = () => { spawned++; return inner(); };
+  for (const [name, bytes, re] of [["two_tables", TWO_TABLES, /declares 2 tables, ceiling is 1/], ["many_tables", MANY_TABLES, /declares 1000 tables/], ["tinit", TABLE_INIT_ENC, /initialiser expression/]]) {
+    reg.add({ id: name });
+    await assert.rejects(reg.load(name, { name, bytes }), re);
+    assert.equal(reg.enabled(name), false);
+  }
+  assert.equal(spawned, 3, "declaration checks happen in the worker's policy");
+  reg.add({ id: "big" });
+  await assert.rejects(reg.load("big", { name: "big", bytes: OVERSIZE }), /module is 1048577 bytes, ceiling is 1048576/);
+  await assert.rejects(reg.load("big", { name: "big", bytes: OVERSIZE.buffer.slice(OVERSIZE.byteOffset, OVERSIZE.byteOffset + OVERSIZE.byteLength) }), /ceiling is 1048576/, "an ArrayBuffer is measured too");
+  assert.equal(spawned, 3, "the oversize module was refused before a worker was spawned");
+  assert.equal(reg.enabled("big"), false);
+  assert.ok(events.some(e => e.type === "log" && e.id === "big" && /rejected "big": module is 1048577 bytes/.test(e.text)), "the refusal is logged with the reason");
 });
 
 const EVIL_NO_MEMORY = Uint8Array.from([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 1, 4, 1, 0x60, 0, 0, 3, 3, 2, 0, 0,
