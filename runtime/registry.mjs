@@ -35,6 +35,8 @@ export const SENSOR_COUNT = 16;
 export const MAX_SHAPES = 32, STATE_SLOTS = 16, MAX_SIGNALS_PER_TICK = 32, MAX_MEMORY_PAGES = 256;
 export const KIND = { ROVER: 0, ROCK: 1, CHARGER: 2, OBJECT: 3 };
 import { validateManifest } from "./manifest.mjs";
+import { sizePolicy, MAX_MODULE_BYTES } from "./wasm_limits.mjs";
+export { MAX_MODULE_BYTES };
 
 export class Registry {
   /**
@@ -90,6 +92,9 @@ export class Registry {
       const errs = validateManifest(manifest);
       if (errs.length) { this.#emit({ type: "log", id, level: "err", text: `rejected "${name}": bad manifest: ${errs.join("; ")}` }); return Promise.reject(new Error("bad manifest: " + errs.join("; "))); }
     }
+    // the size ceiling is checked here, before the bytes are copied or a worker exists, and again in the worker's policy
+    const tooBig = sizePolicy(bytes instanceof Uint8Array ? bytes.length : bytes.byteLength);
+    if (tooBig) { this.#emit({ type: "log", id, level: "err", text: `rejected "${name}": ${tooBig}` }); return Promise.reject(new Error(tooBig)); }
     const bytesCopy = bytes instanceof Uint8Array ? new Uint8Array(bytes) : new Uint8Array(bytes);
     const w = this.spawnWorker();
     this.#emit({ type: "state", id, state: "loading", label: "verifying + instantiating" });
