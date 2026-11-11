@@ -16,7 +16,7 @@ import { readIndex, readKeys } from "../workshop/prompt.mts";
 import { scanText } from "../scripts/check_secrets.mjs";
 import { weakestTier, citationsFor, citedIds, nextStepFor, askWorkshop, moduleAnswerProblem, toCount, MAX_RETRIES_WHEN_BUSY } from "../web/workshop.mjs";
 
-/** The file's budget: package.json runs it with --test-timeout of this; the safety timer fires 10 s before. Measured: 20 s here, 24 s on CI, about 60 s with a 4x CPU throttle. */
+/** The file's budget: package.json runs it with --test-timeout of this; the safety timer fires 10 s before. Measured: 21-24 s here, 24 s on CI, 62 s on a 2-core machine under load (W2 review). A CPU throttle on the page thread changes nothing: the cost is software WebGL in Chrome's GPU process. */
 export const PANEL_BUDGET_MS = 300_000;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, "dist");
@@ -135,6 +135,9 @@ test("askWorkshop maps every answer shape without throwing", async () => {
   assert.equal((await askWorkshop("http://x", [], { fetchImpl: mk(403, { error: "origin" }) })).kind, "refused");
   assert.equal((await askWorkshop("http://x", [], { fetchImpl: async () => { throw new TypeError("Failed to fetch"); } })).kind, "unreachable");
   assert.equal((await askWorkshop("http://x", [], { fetchImpl: mk(200, { type: "failed", error: "e", tries: 3, log: [] }) })).kind, "failed");
+  const own = await askWorkshop("http://x", [], { fetchImpl: mk(200, { type: "module", kind: "failed", error: { x: 1 }, name: "x", wasm: "AA==", manifest: {} }) });
+  assert.equal(own.kind, "module"); assert.equal(own.error, undefined, "a body's own kind and error are ignored");
+  assert.equal((await askWorkshop("http://x", [], { fetchImpl: mk(200, { type: "module", kind: "busy", retryAfter: 1, name: "x", wasm: "AA==", manifest: {} }) })).kind, "module");
   const malformed = await askWorkshop("http://x", [], { fetchImpl: mk(200, { type: "module", name: "x", wasm: "AA==" }) });
   assert.equal(malformed.kind, "error"); assert.match(malformed.message, /malformed \(no manifest\)/);
   assert.equal((await askWorkshop("http://x", [], { fetchImpl: mk(200, { type: "module", name: "x", wasm: "AA==", manifest: {}, tries: "<img src=x onerror=1>" }) })).tries, 0);
@@ -187,6 +190,10 @@ test("panel: questions, answer, proposal with report and did-you-know, confirm, 
     assert.ok(await page.evaluate(() => { const r = document.createRange(); r.selectNodeContents(document.querySelector("#inspector .cite")); return r.toString().length > 10; }), "citation text is selectable");
     assert.match(await text("#ws-thread"), /Did you know\?/, "the created object gets the did-you-know line in the thread");
     assert.match(await text("#log"), /placed weather_station-1 from the workshop/);
+    // removing the object takes its explanation with it, closes the inspector and clears the Objects list entry
+    assert.equal(await page.evaluate(() => window.sandbox.explanations.has("weather_station-1")), true);
+    await page.evaluate(() => window.sandbox.removeObject("weather_station-1"));
+    assert.deepEqual(await page.evaluate(() => [window.sandbox.explanations.size, document.getElementById("inspector").hidden, [...document.querySelectorAll("#objects .chip")].map(c => c.dataset.object)]), [0, true, ["rover"]]);
     assert.deepEqual(errors.filter(e => !/WebGL|GPU|swiftshader/i.test(e)), [], "no page errors");
   } finally { ws.close(); }
 });
@@ -251,6 +258,8 @@ test("panel: markup from the server is never rendered; a malformed module answer
     if (n === 1) return { json: { type: "module", name: "sneaky", wasm: Buffer.from(readFileSync(path.join(ROOT, "build/patrol.wasm"))).toString("base64"), manifest: { name: "sneaky", description: "d", version: 1, author: "a" }, explanation: "e", report: "r", tries: `<img src=x onerror="window.${marker}=1">`, fact_ids: [] } };
     if (n === 2) return { json: { type: "failed", error: "boom", tries: 1, log: [{ attempt: `<img src=x onerror="window.${marker}=1">`, ok: false, error: "x" }] } };
     if (n === 3) return { json: { type: "module", name: "x", wasm: "AA==" } };                                          // no manifest
+    if (n === 4) return { json: { type: "module", kind: "failed", error: { not: "a string" }, name: "sneaky", wasm: Buffer.from(readFileSync(path.join(ROOT, "build/patrol.wasm"))).toString("base64"), manifest: { name: "sneaky", description: "d", version: 1, author: "a" }, explanation: "e", report: "r", tries: 1 } };
+    if (n === 5) return { json: { type: "module", kind: "busy", retryAfter: 1, name: "sneaky", wasm: Buffer.from(readFileSync(path.join(ROOT, "build/patrol.wasm"))).toString("base64"), manifest: { name: "sneaky", description: "d", version: 1, author: "a" }, explanation: "e", report: "r", tries: 1 } };
     return { status: 422, json: { error: "the model declined this request: outside what the workshop builds" } };
   });
   const iport = await listen(impostor);
@@ -272,8 +281,16 @@ test("panel: markup from the server is never rendered; a malformed module answer
     assert.match(await text("#ws-thread .turn.agent.next"), /malformed \(no manifest\); nothing was loaded/);
     assert.equal(await page.$eval("#ws-proposal", e => e.hidden), true);
     assert.equal(await page.$eval("#ws-status", e => e.hidden), true, "no stale 'Built and tested' status");
+    for (const word of ["four", "five"]) {                                                     // a body with its own kind: still a proposal, no retry, no throw
+      await page.evaluate(() => window.sandbox.workshop.reset());
+      const before = n;
+      await say(word);
+      await waitUntil(() => !document.getElementById("ws-proposal").hidden, 15000, `proposal despite kind in the body (${word})`);
+      assert.match(await text("#ws-proposal"), /sneaky/); assert.equal(n, before + 1, "one request, no retries");
+      assert.ok(!/Asking the design agent/.test(await text("#ws-status")), "no stale status");
+    }
     await page.evaluate(() => window.sandbox.workshop.reset());
-    await say("four");
+    await say("six");
     await waitFor("#ws-thread .turn.agent.next", 15000);
     const t = await text("#ws-thread .turn.agent.next");
     assert.match(t, /stepped back from this one/); assert.match(t, /outside what the workshop builds/); assert.match(t, /ask the agent what it could build toward the same goal/);
