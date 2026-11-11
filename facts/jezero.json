@@ -716,31 +716,30 @@
         "variable": "t_air_1p45m",
         "axes": {
           "local_time_ltst_h": [
-            0,
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11,
-            12,
-            13,
-            14,
-            15,
-            16,
-            17,
-            18,
-            19,
-            20,
-            21,
-            22,
-            23,
-            24
+            0.5,
+            1.5,
+            2.5,
+            3.5,
+            4.5,
+            5.5,
+            6.5,
+            7.5,
+            8.5,
+            9.5,
+            10.5,
+            11.5,
+            12.5,
+            13.5,
+            14.5,
+            15.5,
+            16.5,
+            17.5,
+            18.5,
+            19.5,
+            20.5,
+            21.5,
+            22.5,
+            23.5
           ]
         },
         "series": [
@@ -767,8 +766,7 @@
           213.73,
           210.12,
           207.31,
-          204.76,
-          202.8
+          204.76
         ],
         "day_to_day_rms": [
           2.68,
@@ -794,8 +792,7 @@
           3.62,
           2.99,
           2.89,
-          2.99,
-          2.68
+          2.99
         ]
       },
       "unit": "K",
@@ -816,7 +813,7 @@
         "season": "MY36, Ls 6.1-359.9"
       },
       "instrument": "Perseverance MEDA ATS (calibrated level, median of the three mast sensors at 1.45 m)",
-      "notes": "All seasons pooled: this is the typical temperature for an hour of the day over one measured Mars year, not today's weather and not a seasonal model. series[j] is at axes.local_time_ltst_h[j]; hour 24 repeats hour 0. Backs the live ENV_AIR_TEMP_K sensor (task L1). MEDA bundle v6.0, products CAL_ATS v1.0, CAL_ATS v2.0, DER_PS v1.0, DER_PS v2.0, DER_PS v3.0, sols 1-658; statistic of the archive computed by facts/derive/meda_my36.py (method in facts/derive/out/meda_my36.json). derive: facts/derive/out/meda_my36.json#air_temperature_k.hourly_record"
+      "notes": "All seasons pooled: this is the typical temperature for an hour of the day over one measured Mars year, not today's weather and not a seasonal model. series[j] is the mean over the LTST hour bin [j, j+1) and sits at the bin centre axes.local_time_ltst_h[j] = j + 0.5; the table is periodic, so interpolate between 23.5 and 0.5 across midnight. Backs the live ENV_AIR_TEMP_K sensor (task L1). MEDA bundle v6.0, products CAL_ATS v1.0, CAL_ATS v2.0, DER_PS v1.0, DER_PS v2.0, DER_PS v3.0, sols 1-658; statistic of the archive computed by facts/derive/meda_my36.py (method in facts/derive/out/meda_my36.json). derive: facts/derive/out/meda_my36.json#air_temperature_k.hourly_record"
     }
   ]
 }

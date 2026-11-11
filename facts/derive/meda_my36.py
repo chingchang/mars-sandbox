@@ -170,7 +170,7 @@ def selftest():
     assert sm["annual"]["daily_mean_max"][1] == 3 and sm["diurnal"]["n_sols_swing"] == 2
     assert sm["by_season"]["autumn"]["daily_mean_p50"] == 720.0 and sm["by_season"]["summer"]["n_sols_min"] == 0
     hc = hourly_curve(by_sol, "ps")
-    assert len(hc["series"]) == 25 and hc["series"][24] == hc["series"][0] and hc["n_sols"][12] == 2 and hc["n_sols"][20] == 3
+    assert len(hc["series"]) == 24 and hc["axes"]["local_time_ltst_h"][0] == 0.5 and hc["axes"]["local_time_ltst_h"][23] == 23.5 and hc["n_sols"][12] == 2 and hc["n_sols"][20] == 3
     assert abs(hc["series"][15] - full["hourly_mean"][15]) < 0.01, "sol 1 and 3 share the same profile; sol 2 only has night hours (values rounded to 0.01)"
     assert hc["day_to_day_rms"][15] == 0.0 and hc["n_sols"][15] == 2
     print("selftest ok")
@@ -178,20 +178,19 @@ def selftest():
 
 
 def hourly_curve(by_sol: dict, key: str) -> dict:
-    """Typical-day curve: for each local true solar hour, the mean over sols of that sol's hourly
-    mean, and the spread (standard deviation) across sols. All seasons pooled; a sol contributes to
-    an hour only if it sampled that hour. Hour 24 repeats hour 0 so the table matches the
-    climatology records (25 points, periodic)."""
+    """Typical-day curve: for each local true solar hour bin [h, h+1), the mean over sols of that
+    sol's bin mean, and the spread (standard deviation) across sols. All seasons pooled; a sol
+    contributes to a bin only if it sampled it. Values sit at the bin centres (0.5 ... 23.5) and the
+    table is periodic."""
     rows = [r for r in by_sol.values() if key in r and r[key].get("n", 0) > 0]
     means, spread, n_sols = [], [], []
     for h in range(24):
         vals = [r[key]["hourly_mean"][str(h)] if str(h) in r[key]["hourly_mean"] else r[key]["hourly_mean"].get(h) for r in rows]
         vals = [v for v in vals if v is not None]
         means.append(float(np.mean(vals))); spread.append(float(np.std(vals))); n_sols.append(len(vals))
-    means.append(means[0]); spread.append(spread[0]); n_sols.append(n_sols[0])
-    return {"variable": "t_air_1p45m", "axes": {"local_time_ltst_h": list(range(25))}, "series": [round(v, 2) for v in means],
+    return {"variable": "t_air_1p45m", "axes": {"local_time_ltst_h": [h + 0.5 for h in range(24)]}, "series": [round(v, 2) for v in means],
             "day_to_day_rms": [round(v, 2) for v in spread], "n_sols": n_sols,
-            "method": "mean over MY36 sols of each sol's hourly mean (LTST hour bins); day_to_day_rms is the standard deviation across sols; hour 24 repeats hour 0"}
+            "method": "mean over MY36 sols of each sol's hourly mean in the LTST bin [h, h+1); each value sits at the bin centre h+0.5; the table is periodic (interpolate between 23.5 and 0.5 across midnight); day_to_day_rms is the standard deviation across sols"}
 
 
 def main():

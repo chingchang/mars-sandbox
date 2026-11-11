@@ -1,8 +1,8 @@
 (module
  (type $0 (func (param i32 f32)))
- (type $1 (func (param i32) (result f32)))
- (type $2 (func (param i32 f32 f32 f32 f32 f32 f32) (result i32)))
- (type $3 (func (param i32 f32 f32 f32 f32 f32)))
+ (type $1 (func (param i32 f32 f32 f32 f32 f32 f32) (result i32)))
+ (type $2 (func (param i32 f32 f32 f32 f32 f32)))
+ (type $3 (func (param i32) (result f32)))
  (type $4 (func (param f32)))
  (type $5 (func))
  (type $6 (func (param i32)))
@@ -15,11 +15,11 @@
  (import "host" "signal_emit" (func $behaviors/host/signal_emit (param i32 f32)))
  (import "host" "remove" (func $behaviors/host/remove (param i32)))
  (import "host" "fact_tier" (func $behaviors/host/fact_tier (param i32) (result i32)))
- (import "host" "fact" (func $behaviors/host/fact (param i32) (result f32)))
  (global $behaviors/weather_station/mast (mut i32) (i32.const -1))
  (global $behaviors/weather_station/panel (mut i32) (i32.const -1))
  (global $behaviors/weather_station/flag (mut i32) (i32.const -1))
  (global $behaviors/weather_station/lastHour (mut i32) (i32.const -1))
+ (global $behaviors/weather_station/sols (mut i32) (i32.const 0))
  (global $behaviors/weather_station/flagUp (mut i32) (i32.const -1))
  (memory $0 0 256)
  (export "init" (func $behaviors/weather_station/init))
@@ -28,25 +28,16 @@
  (func $behaviors/weather_station/tick (param $0 f32)
   (local $1 i32)
   (local $2 f32)
-  i32.const 6
-  call $behaviors/host/read
-  local.set $2
   i32.const 14
   call $behaviors/host/read
   local.set $0
-  i32.const 0
-  local.get $2
-  i32.const 3
-  call $behaviors/host/fact
-  f32.div
-  local.tee $2
-  call $behaviors/host/state_set
+  i32.const 15
+  call $behaviors/host/read
+  local.set $2
   i32.const 1
   local.get $0
   call $behaviors/host/state_set
   local.get $2
-  f32.const 24
-  f32.mul
   f64.promote_f32
   f64.floor
   i32.trunc_sat_f64_s
@@ -54,6 +45,19 @@
   global.get $behaviors/weather_station/lastHour
   i32.ne
   if
+   local.get $1
+   global.get $behaviors/weather_station/lastHour
+   i32.lt_s
+   global.get $behaviors/weather_station/lastHour
+   i32.const 0
+   i32.ge_s
+   i32.and
+   if
+    global.get $behaviors/weather_station/sols
+    i32.const 1
+    i32.add
+    global.set $behaviors/weather_station/sols
+   end
    local.get $1
    global.set $behaviors/weather_station/lastHour
    i32.const 100
@@ -64,6 +68,14 @@
    local.get $0
    call $behaviors/host/log
   end
+  i32.const 0
+  global.get $behaviors/weather_station/sols
+  f32.convert_i32_s
+  local.get $2
+  f32.const 24
+  f32.div
+  f32.add
+  call $behaviors/host/state_set
   local.get $0
   f32.const 203.14999389648438
   f32.lt

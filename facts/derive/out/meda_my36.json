@@ -1536,31 +1536,30 @@
    "variable": "t_air_1p45m",
    "axes": {
     "local_time_ltst_h": [
-     0,
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17,
-     18,
-     19,
-     20,
-     21,
-     22,
-     23,
-     24
+     0.5,
+     1.5,
+     2.5,
+     3.5,
+     4.5,
+     5.5,
+     6.5,
+     7.5,
+     8.5,
+     9.5,
+     10.5,
+     11.5,
+     12.5,
+     13.5,
+     14.5,
+     15.5,
+     16.5,
+     17.5,
+     18.5,
+     19.5,
+     20.5,
+     21.5,
+     22.5,
+     23.5
     ]
    },
    "series": [
@@ -1587,8 +1586,7 @@
     213.73,
     210.12,
     207.31,
-    204.76,
-    202.8
+    204.76
    ],
    "day_to_day_rms": [
     2.68,
@@ -1614,8 +1612,7 @@
     3.62,
     2.99,
     2.89,
-    2.99,
-    2.68
+    2.99
    ],
    "n_sols": [
     593,
@@ -1641,10 +1638,9 @@
     584,
     575,
     584,
-    575,
-    593
+    575
    ],
-   "method": "mean over MY36 sols of each sol's hourly mean (LTST hour bins); day_to_day_rms is the standard deviation across sols; hour 24 repeats hour 0"
+   "method": "mean over MY36 sols of each sol's hourly mean in the LTST bin [h, h+1); each value sits at the bin centre h+0.5; the table is periodic (interpolate between 23.5 and 0.5 across midnight); day_to_day_rms is the standard deviation across sols"
   }
  },
  "generated_by": "facts/derive/meda_my36.py",

@@ -12,7 +12,7 @@ const META = [
     logNames:{99:"about to hang"} },
   // generic-API samples (X1): loadable into any object with sandbox.loadInto(id, name); the workshop panel (W2) will list them
   { name:"weather_station", label:"Weather station (generic API)", hidden:true, prompt:"a weather station: mast, panel, counts sols, pulses a signal every Mars hour",
-    logNames:{30:"hour pulse", 31:"tier of the temperature fact"} },
+    logNames:{30:"hourly air temperature (K)", 31:"tier of the temperature record", 32:"cold flag (1 up, 0 down)"} },
   { name:"beacon", label:"Proximity beacon (generic API)", hidden:true, prompt:"a beacon that lights up when any rover is within 20 metres",
     logNames:{50:"lit (1) / dark (0)"} },
 ];

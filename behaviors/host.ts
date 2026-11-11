@@ -29,6 +29,10 @@ export const TARGET_BEARING: i32 = 13; // radians relative to heading
 // curve interpolated at the world clock, not today's weather and not a seasonal model.
 // Backed by fact jezero.temperature.my36_air_hourly_mean (tier measured).
 export const ENV_AIR_TEMP_K: i32 = 14;  // kelvin
+// The world's local true solar hour, 0..24, as the page computes it (12 = the sun's highest
+// elevation). This is the clock ENV_AIR_TEMP_K was looked up at and the hour the HUD shows; use
+// it for anything hourly. TIME (key 6) stays in world seconds for the rover behaviours.
+export const ENV_LOCAL_HOUR: i32 = 15;  // hours, 0..24
 
 @external("host", "read")
 export declare function read(key: i32): f32;

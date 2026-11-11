@@ -7,8 +7,8 @@
 // measured Mars year (Perseverance MEDA, MY36): not today's weather. The
 // flag threshold, 203.15 K (-70 C), is the player's choice from the prompt,
 // not a fact about Mars.
-import { read, fact, fact_tier, spawn, pose, remove, state_set, signal_emit, log, TIME, ENV_AIR_TEMP_K,
-         SHAPE_CYLINDER, SHAPE_PANEL, SHAPE_CONE, FACT_MARS_TIME_SOL, FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN } from "./host";
+import { read, fact_tier, spawn, pose, remove, state_set, signal_emit, log, ENV_AIR_TEMP_K, ENV_LOCAL_HOUR,
+         SHAPE_CYLINDER, SHAPE_PANEL, SHAPE_CONE, FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN } from "./host";
 
 const SLOT_SOLS: i32 = 0;
 const SLOT_T_NOW_K: i32 = 1;
@@ -20,6 +20,7 @@ const LOG_FLAG: i32 = 32;          // value: 1 up, 0 down
 const COLD_K: f32 = 203.15;        // -70 C, from the player's request
 let mast: i32 = -1, panel: i32 = -1, flag: i32 = -1;
 let lastHour: i32 = -1;
+let sols: i32 = 0;                 // sols elapsed on the world clock, counted at each midnight
 let flagUp: i32 = -1;
 
 export function init(): void {
@@ -32,18 +33,17 @@ export function init(): void {
 }
 
 export function tick(dt: f32): void {
-  const t = read(TIME);
   const temp = read(ENV_AIR_TEMP_K);
-  const sol = fact(FACT_MARS_TIME_SOL);                 // seconds per sol, from facts/
-  const sols = t / sol;
-  state_set(SLOT_SOLS, sols);
+  const hourNow = read(ENV_LOCAL_HOUR);                  // the world's local true solar hour, same clock as the temperature
   state_set(SLOT_T_NOW_K, temp);
-  const hour = <i32>Math.floor(sols * 24.0);
+  const hour = <i32>Math.floor(hourNow);
   if (hour != lastHour) {
+    if (lastHour >= 0 && hour < lastHour) sols += 1;     // crossed midnight
     lastHour = hour;
     signal_emit(SIGNAL_HOUR, <f32>hour);
     log(LOG_HOUR, temp);                                 // the hourly temperature log
   }
+  state_set(SLOT_SOLS, <f32>sols + hourNow / 24.0);
   const cold: i32 = temp < COLD_K ? 1 : 0;
   if (cold != flagUp) {
     flagUp = cold;

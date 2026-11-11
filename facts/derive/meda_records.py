@@ -94,7 +94,8 @@ def main():
         "uncertainty": {"type": "series", "pointer": "value.day_to_day_rms", "note": f"standard deviation across sols for each hour ({min(hc['n_sols'])}-{max(hc['n_sols'])} sols per hour); seasons are pooled, so most of the spread is seasonal"},
         **base, "instrument": ATS,
         "notes": ("All seasons pooled: this is the typical temperature for an hour of the day over one measured Mars year, not today's weather and not a seasonal model. "
-                  "series[j] is at axes.local_time_ltst_h[j]; hour 24 repeats hour 0. Backs the live ENV_AIR_TEMP_K sensor (task L1)." + prov + f" derive: {LINK}#air_temperature_k.hourly_record"),
+                  "series[j] is the mean over the LTST hour bin [j, j+1) and sits at the bin centre axes.local_time_ltst_h[j] = j + 0.5; the table is periodic, "
+                  "so interpolate between 23.5 and 0.5 across midnight. Backs the live ENV_AIR_TEMP_K sensor (task L1)." + prov + f" derive: {LINK}#air_temperature_k.hourly_record"),
     })
     supersede = {
         "jezero.pressure.annual_envelope": "jezero.pressure.my36_daily_mean",

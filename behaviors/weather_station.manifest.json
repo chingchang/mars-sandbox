@@ -6,7 +6,7 @@
   "state": [
     {
       "slot": 0,
-      "label": "sols elapsed",
+      "label": "sols elapsed on the world clock",
       "unit": "sol"
     },
     {
@@ -31,11 +31,10 @@
   },
   "shapes": 3,
   "fact_ids": [
-    "jezero.temperature.my36_air_hourly_mean",
-    "mars.time.sol"
+    "jezero.temperature.my36_air_hourly_mean"
   ],
   "did_you_know": {
-    "text": "At Jezero the air at 1.45 m typically falls to about 193 K (-80 C) just before dawn and climbs to about 257 K (-16 C) mid-afternoon, measured by Perseverance over a full Mars year.",
+    "text": "A typical day at Jezero runs from about 195 K (-78 C) just before dawn to about 247 K (-26 C) mid-afternoon, averaged hour by hour over a full Mars year measured by Perseverance.",
     "fact_id": "jezero.temperature.my36_air_hourly_mean"
   }
 }
