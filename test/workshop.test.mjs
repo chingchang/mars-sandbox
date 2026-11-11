@@ -16,7 +16,8 @@ import { createWorkshopServer, hostAllowed, originAllowed, parseConversation } f
 import { scanRepo, scanText } from "../scripts/check_secrets.mjs";
 import { validateManifest } from "../runtime/manifest.mjs";
 import { memoryPolicy } from "../runtime/wasm_limits.mjs";
-import { MAX_MEMORY_PAGES } from "../runtime/registry.mjs";
+import { BUDGET_MS, MAX_MEMORY_PAGES, OVER_BUDGET_STRIKES, tickVerdict } from "../runtime/registry.mjs";
+import net from "node:net";
 
 const root = new URL("..", import.meta.url);
 const read = p => readFileSync(new URL(p, root), "utf8");
@@ -196,6 +197,55 @@ test("HTTP: a burst of requests is admitted up to the queue bound; the rest get 
     assert.equal(calls.length, 5, "the model was called only for admitted requests");
     assert.equal(q.inFlight, 0);
     const after = await post(); assert.equal(after.status, 200, "room again once the burst is done"); assert.equal((await after.json()).type, "module");
+  } finally { server.close(); }
+});
+
+const SLOW_SRC = 'import { state_set } from "./host";\nlet acc: f64 = 1.0;\nexport function init(): void {}\nexport function tick(dt: f32): void { for (let i = 0; i < 1000000; i++) { acc = acc * 1.0000001 + 0.5; } state_set(0, <f32>acc); }\n';   // about 5 ms per tick here
+
+test("tick budget: the smoke test applies the runtime's rule; one paused tick passes, three in a row or a slow mean fail; a slow module is refused", async () => {
+  assert.equal(BUDGET_MS, 2); assert.equal(OVER_BUDGET_STRIKES, 3);
+  const quiet = Array(599).fill(0.5);
+  const one = tickVerdict([...quiet.slice(0, 300), 6, ...quiet.slice(300)]);
+  assert.equal(one.ok, true); assert.equal(one.worst, 6); assert.equal(one.over, 1); assert.equal(one.strikes, 1);
+  const three = tickVerdict([...quiet.slice(0, 100), 2.1, 2.2, 2.3, ...quiet.slice(103)]);
+  assert.equal(three.ok, false); assert.match(three.reason, /^3 ticks in a row over 2 ms/); assert.equal(three.over, 3);
+  const spaced = tickVerdict([0.5, 2.1, 2.2, 0.5, 2.1, 2.2, 0.5]);
+  assert.equal(spaced.ok, true, "a quiet tick resets the run, as in the registry"); assert.equal(spaced.strikes, 2);
+  const mean = tickVerdict([0.5, 3.0, 0.5, 3.0, 0.5, 3.0, 0.5, 3.0]);                    // never three in a row, mean 1.75 ok; push it over
+  assert.equal(mean.ok, true);
+  const slowMean = tickVerdict([0.5, 5.0, 0.5, 5.0, 0.5, 5.0]);
+  assert.equal(slowMean.ok, false); assert.match(slowMean.reason, /^mean tick 2\.75 ms, budget is 2 ms/);
+  assert.equal(tickVerdict([]).ok, true);
+  assert.equal(tickVerdict([3, 3, 3], 2, 4).ok, false, "mean rule still catches it with a higher strike count"); assert.match(tickVerdict([3, 3, 3], 2, 4).reason, /^mean/);
+  // a module whose every tick is slow: the smoke test stops at the third strike (no hang), and the message names the rule
+  const r = await compileAndTest(SLOW_SRC);
+  assert.equal(r.ok, false); assert.match(r.error, /^TEST FAILURE:/); assert.match(r.error, /tick\(\) over budget: 3 ticks in a row over 2 ms \(worst [0-9.]+ ms\)/);
+  const ok = await compileAndTest(STATION_SRC);
+  assert.ok(ok.ok); assert.match(ok.report, /^ok: 600 ticks, \d+ actuator calls, worst tick [0-9.]+ ms, \d+ over the 2 ms budget/);
+});
+
+test("HTTP: a second Host header is refused; a busy queue reached from outside the admission count is a 503", async () => {
+  const { llm, calls } = recorded([QUESTIONS]);
+  const server = createWorkshopServer({ llm, index, keys, build: async () => { throw new BusyError(); } });
+  await new Promise(r => server.listen(0, "127.0.0.1", r));
+  const port = server.address().port;
+  try {
+    const rawLines = lines => new Promise((resolve, reject) => {
+      const sock = net.connect(port, "127.0.0.1", () => sock.write(lines.join("\r\n") + "\r\n\r\n"));
+      let text = ""; sock.on("data", c => text += c); sock.on("end", () => resolve(text)); sock.on("error", reject); sock.setTimeout(5000, () => sock.destroy(new Error("timeout")));
+    });
+    const two = await rawLines(["GET /health HTTP/1.1", "Host: localhost", "Host: evil.example", "Connection: close"]);
+    assert.match(two, /^HTTP\/1\.1 403/); assert.match(two, /not served/);
+    const one = await rawLines(["GET /health HTTP/1.1", "Host: localhost", "Connection: close"]);
+    assert.match(one, /^HTTP\/1\.1 200/);
+    const { llm: llm2 } = recorded([moduleReply(STATION_MANIFEST, STATION_SRC)]);
+    const busy = createWorkshopServer({ llm: llm2, index, keys, build: async () => { throw new BusyError(); } });
+    await new Promise(r => busy.listen(0, "127.0.0.1", r));
+    try {
+      const res = await fetch(`http://127.0.0.1:${busy.address().port}/workshop`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "x" }] }) });
+      assert.equal(res.status, 503); assert.equal(res.headers.get("retry-after"), "5"); assert.match((await res.json()).error, /busy/);
+    } finally { busy.close(); }
+    assert.equal(calls.length, 0);
   } finally { server.close(); }
 });
 

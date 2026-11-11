@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { anthropicLlm, describeLlmError, DEFAULT_MODEL, type ChatMessage, type Llm } from "./llm.mts";
 import { DEFAULT_TRIES, runWorkshop, type WorkshopOptions } from "./pipeline.mts";
 import { buildSystemPrompt, liveFactIds, readIndex, readKeys, ROOT } from "./prompt.mts";
-import { buildQueue, compileAndTest, type BuildQueue } from "./compile.mts";
+import { buildQueue, BusyError, compileAndTest, type BuildQueue } from "./compile.mts";
 
 export const DEFAULT_PORT = 8787;
 export const MAX_BODY_BYTES = 1 << 20, MAX_MESSAGES = 40, MAX_TRIES = 5;
@@ -78,7 +78,7 @@ export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [],
   const doBuild = build ?? ((src: string) => compileAndTest(src, ROOT, {}, queue));   // compileAndTest queues itself; a custom build is the caller's business
   return createServer(async (req, res) => {
     const host = req.headers.host ?? "";
-    if (!hostAllowed(host, hosts)) return send(res, 403, { error: `host "${host}" is not served; the workshop answers to localhost (WORKSHOP_HOSTS adds more)` });
+    if (!hostAllowed(host, hosts) || (req.headersDistinct.host?.length ?? 0) > 1) return send(res, 403, { error: `host "${host}" is not served; the workshop answers to localhost (WORKSHOP_HOSTS adds more)` });
     const origin = req.headers.origin;
     if (origin !== undefined && !originAllowed(origin, origins)) return send(res, 403, { error: `origin "${origin}" may not use the workshop; local pages only (WORKSHOP_ORIGINS adds more)` });
     const cors: Record<string, string> = origin === undefined ? {} : { "access-control-allow-origin": origin, "vary": "origin", "access-control-allow-headers": "content-type", "access-control-allow-methods": "POST, GET, OPTIONS" };
@@ -103,6 +103,7 @@ export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [],
       } finally { admitted--; }
     } catch (e) {
       if (e instanceof BadRequest) return send(res, 400, { error: e.message }, cors);
+      if (e instanceof BusyError) return send(res, 503, { error: e.message }, { ...cors, "retry-after": "5" });
       const { status, message } = describeLlmError(e);
       return send(res, status, { error: message }, cors);
     }

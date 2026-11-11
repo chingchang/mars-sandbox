@@ -30,6 +30,26 @@ export const WATCHDOG_MS = 400;        // tick() must return within this, or the
 export const TICK_HZ = 20;
 export const LOAD_TIMEOUT_MS = 3000;
 export const OVER_BUDGET_STRIKES = 3;  // consecutive over-budget ticks before the module is disabled
+
+/**
+ * The budget rule as a pure function over a list of tick times (ms), for the smoke test and
+ * anything else that judges a module offline. Same rule as tick() below: `strikes` consecutive
+ * ticks over `budget` is a violation; so is a mean over `budget`. One slow tick is not: the
+ * operating system pauses a thread now and then, and the world does not disable a module for it.
+ * @returns {{ ok: boolean, reason: string | null, worst: number, over: number, mean: number, strikes: number }}
+ */
+export function tickVerdict(times, budget = BUDGET_MS, strikes = OVER_BUDGET_STRIKES) {
+  let worst = 0, over = 0, run = 0, longest = 0, sum = 0;
+  for (const t of times) {
+    sum += t; if (t > worst) worst = t;
+    if (t > budget) { over++; run++; if (run > longest) longest = run; } else run = 0;
+  }
+  const mean = times.length ? sum / times.length : 0;
+  let reason = null;
+  if (longest >= strikes) reason = `${strikes} ticks in a row over ${budget} ms (worst ${worst.toFixed(2)} ms)`;
+  else if (mean > budget) reason = `mean tick ${mean.toFixed(2)} ms, budget is ${budget} ms`;
+  return { ok: reason === null, reason, worst, over, mean, strikes: longest };
+}
 export const MEM_SLOTS = 64;
 export const SENSOR_COUNT = 16;
 export const MAX_SHAPES = 32, STATE_SLOTS = 16, MAX_SIGNALS_PER_TICK = 32, MAX_MEMORY_PAGES = 256;
