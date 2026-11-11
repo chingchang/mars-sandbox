@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { compileAndTest } from "../../workshop/compile.mts";
-import { questionFactIds, otherFactIds } from "../../workshop/acceptance/run.mts";
+import { questionFactIds, otherFactIds, ACCEPTANCE_PROMPTS } from "../../workshop/acceptance/run.mts";
 import { CHECKS } from "./behaviour.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -40,6 +40,12 @@ export async function judgeTranscript(file) {
   out.question_fact_ids = [...new Set(qs.flatMap(questionFactIds))];
   out.question_other_ids = [...new Set(qs.flatMap(otherFactIds))];
   out.question_fact_grounded = out.question_fact_ids.length > 0;
+  // cross-checks before anything else: the first message must be the acceptance prompt, and tries must equal the per-try log
+  const first = t.turns?.[0]?.request_messages?.[0];
+  const inconsistent = [];
+  if (!first || first.role !== "user" || first.content !== ACCEPTANCE_PROMPTS[t.prompt_number - 1]) inconsistent.push("the first message is not the acceptance prompt as written");
+  if (Array.isArray(t.log) && Number.isInteger(t.tries) && t.log.length !== t.tries) inconsistent.push(`tries is ${t.tries} but the log holds ${t.log.length}`);
+  if (inconsistent.length) { out.verdict = "inconsistent"; out.why = inconsistent.join("; "); return out; }
   if (t.result !== "module" || typeof t.source !== "string") { out.verdict = "fail"; out.why = `no module in the transcript (${out.result})`; return out; }
   const built = await compileAndTest(t.source);
   out.rebuilt = built.ok; out.smoke = built.ok ? built.report : built.error;

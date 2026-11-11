@@ -74,14 +74,15 @@ export async function solarPanel(bytes, manifest) {
   try {
     w.add("obj", 0, 0); await w.load("obj", "candidate", bytes, manifest);
     const yawsNow = () => Object.fromEntries(w.shapes("obj").map(s => [s.handle, s.pose?.yaw ?? 0]));
-    /** Hold the hour until no shape's yaw moved more than 0.01 rad over 10 ticks (up to 10 s of world time). */
+    const pitchesNow = () => Object.fromEntries(w.shapes("obj").map(s => [s.handle, s.pose?.pitch ?? 0]));
+    /** Hold the hour until no shape's yaw moved more than 0.01 rad over 10 ticks (up to 60 s of world time, so a slow motor settles and a spinner never does). */
     const settle = async h => {
       w.hour = h; let history = [];
-      for (let i = 0; i < 200; i++) {
+      for (let i = 0; i < 1200; i++) {
         await w.run(1); history.push(yawsNow()); if (history.length > 10) history.shift();
-        if (history.length === 10 && Object.keys(history[9]).every(k => history.every(y => Math.abs(wrap((y[k] ?? 0) - history[9][k])) < 0.01))) return { yaws: history[9], st: w.state("obj"), steady: true, ticks: i + 1, tempK: w.tempK() };
+        if (history.length === 10 && Object.keys(history[9]).every(k => history.every(y => Math.abs(wrap((y[k] ?? 0) - history[9][k])) < 0.01))) return { yaws: history[9], pitches: pitchesNow(), st: w.state("obj"), steady: true, ticks: i + 1, tempK: w.tempK() };
       }
-      return { yaws: yawsNow(), st: w.state("obj"), steady: false, ticks: 200, tempK: w.tempK() };
+      return { yaws: yawsNow(), pitches: pitchesNow(), st: w.state("obj"), steady: false, ticks: 1200, tempK: w.tempK() };
     };
     const ORDER = [12, 7.5, 16.5, 9.5, 14.5];
     const samples = {}; for (const h of ORDER) samples[h] = await settle(h);
@@ -95,8 +96,9 @@ export async function solarPanel(bytes, manifest) {
       const mono = steps.every(s => s > 0.02) || steps.every(s => s < -0.02);
       if (mono && (!best || span > best.span)) best = { hnd, ys, span };
     }
-    ev.push(unsteady.length ? `yaw never settled at ${unsteady.join(", ")} h (still moving after 10 s of world time): spinning, not tracking` : `yaw settled at every hour (${ORDER.map(h => `${h} h in ${samples[h].ticks} ticks`).join(", ")})`);
+    ev.push(unsteady.length ? `yaw never settled at ${unsteady.join(", ")} h (still moving after 60 s of world time): spinning, not tracking` : `yaw settled at every hour (${ORDER.map(h => `${h} h in ${samples[h].ticks} ticks`).join(", ")})`);
     ev.push(best ? `shape ${best.hnd} steady yaw at ${HOURS.join("/")} h: ${best.ys.map(y => y.toFixed(2)).join(", ")} rad, one direction, span ${best.span.toFixed(2)} rad` : `no shape's steady yaw moves one way with the hour (shapes: ${Object.keys(samples[12].yaws).join(",") || "none"})`);
+    for (const hnd of Object.keys(samples[12].pitches)) ev.push(`shape ${hnd} settled pitch at ${HOURS.join("/")} h: ${HOURS.map(h => (samples[h].pitches[hnd] ?? 0).toFixed(2)).join(", ")} rad (for a single-axis tracker; the reviewer decides)`);
     const noonS = samples[12], nightS = await settle(0);
     const trivial = (v, s) => Math.abs(v - 12) < 1e-3 && s === noonS || Math.abs(v - 0) < 1e-3 && s === nightS;                   // the hour itself
     const isHourOrTemp = i => (Math.abs(noonS.st[i] - 12) < 1e-3 && Math.abs(nightS.st[i] - 0) < 1e-3) || (Math.abs(noonS.st[i] - noonS.tempK) < 0.5 && Math.abs(nightS.st[i] - nightS.tempK) < 0.5);
@@ -174,9 +176,9 @@ export async function dustGauge(bytes, manifest) {
   if (!candidates.length) { ev.push("the manifest cites no scalar optical-depth fact and none is in the index"); return { pass: false, evidence: ev }; }
   const run = async overrides => { const w = await makeWorld({ hour: 10, factOverrides: overrides }); try { w.add("obj", 0, 0); await w.load("obj", "candidate", bytes, manifest); w.hourPerTick = 0.15; await w.run(200); return w.state("obj"); } finally { w.close(); } };   // 30 h of clock, one midnight
   const base = await run({}), high = await run(Object.fromEntries(candidates.map(id => [id, facts[id].value * 4])));
-  const tauValues = new Set(candidates.flatMap(id => [facts[id].value, facts[id].value * 4]));
+  const baseTaus = candidates.map(id => facts[id].value), highTaus = candidates.map(id => facts[id].value * 4);
   const near = (a, b) => Math.abs(a - b) <= 1e-5 * Math.max(1, Math.abs(b));
-  const isTauCopy = i => [...tauValues].some(v => near(base[i], v) || near(high[i], v));
+  const isTauCopy = i => baseTaus.some(v => near(base[i], v)) && highTaus.some(v => near(high[i], v));   // a copy of tau in both runs, not a reading that happens to equal a tau once
   const slot = base.findIndex((v, i) => Number.isFinite(v) && v > 0 && Number.isFinite(high[i]) && high[i] / v >= 1.5 && !isTauCopy(i));
   const falling = base.findIndex((v, i) => Number.isFinite(v) && v > 0 && Number.isFinite(high[i]) && high[i] / v <= 0.67 && !isTauCopy(i));
   ev.push(`raised ${candidates.join(", ")} fourfold; 10 s of world time with the clock running 30 h through a midnight`);
