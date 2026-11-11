@@ -55,13 +55,13 @@ test("weather station: two shapes, live temperature slot, an hourly signal on th
   await run(6, DAY_SECONDS / 24);                                      // each tick advances one page hour
   const slots = reg.get("ws").state;
   assert.ok(Math.abs(slots[1] - airTempAt(t.value - DAY_SECONDS / 24)) < 0.5, `slot 1 = live air temperature, got ${slots[1]}`);
-  assert.ok(Math.abs(slots[0] - localHour(t.value - DAY_SECONDS / 24) / 24) < 0.05, `sols elapsed on the world clock ${slots[0]}`);
+  assert.ok(Math.abs(slots[0] - localHour(t.value - DAY_SECONDS / 24) / 24) < 0.05, `world clock in sols ${slots[0]} (midnights crossed + fraction of the sol)`);
   const pulses = events.filter(e => e.type === "signal" && e.id === "ws" && e.code === 100);
   assert.ok(pulses.length >= 5, `hour pulses ${pulses.length}`);
   assert.ok(reg.nextSignals.has(100) || reg.signals.has(100), "the last pulse is queued for the next tick");
 });
 
-test("the hourly MY36 air-temperature record: 25 periodic points, minimum and maximum near the typical records and their times", () => {
+test("the hourly MY36 air-temperature record: 24 periodic points at bin centres, minimum and maximum near the typical records and their times", () => {
   const r = INDEX.facts["jezero.temperature.my36_air_hourly_mean"];
   assert.equal(r.tier, "measured"); assert.equal(r.uncertainty.type, "series"); assert.equal(r.uncertainty.pointer, "value.day_to_day_rms");
   assert.equal(CURVE.length, 24); assert.equal(r.value.day_to_day_rms.length, 24);
@@ -87,13 +87,12 @@ test("weather station over one sol: hourly temperature logs, flag up at night an
   const { reg, events, run } = makeWorld();
   reg.add({ id: "ws" });
   await reg.load("ws", { name: "weather_station", bytes: wasm("weather_station"), manifest: STATION_MANIFEST, logNames: { 30: "hourly temp", 32: "flag" } });
-  await run(30, DAY_SECONDS / 24, 20);                                // 30 ticks, one page hour each: 1.25 page sols
+  await run(25, DAY_SECONDS / 24, 20);                                // 25 ticks, one page hour each: t = 0 h .. 24 h, exactly one page sol
   const ws = reg.get("ws");
   const flagLogs = events.filter(e => e.type === "log" && e.id === "ws" && /flag/.test(e.text)).map(e => +e.text.split(" ").at(-1));
-  assert.ok(flagLogs.length >= 2, `flag changed at least twice: ${flagLogs.join(",")}`);
-  assert.ok(flagLogs.includes(1) && flagLogs.includes(0), "flag went both up (night) and down (day)");
+  assert.deepEqual(flagLogs, [0, 1, 0], `flag logged once at load (warm at ~9.4 h), then up once at night and down once in the morning: ${flagLogs.join(",")}`);
   const hourly = events.filter(e => e.type === "log" && e.id === "ws" && /hourly temp/.test(e.text));
-  assert.ok(hourly.length >= 24 && hourly.length <= 32, `${hourly.length} hourly logs over 1.25 page sols (one per hour change)`);
+  assert.equal(hourly.length, 25, `${hourly.length} hourly logs over exactly one sol: one at load, then one per hour change; a station that skips an hour fails here`);
   // state at a known cold hour and a known warm hour, found through the page's own clock
   const timeAtHour = h => { for (let t = 0; t < DAY_SECONDS; t += 0.25) if (Math.abs(localHour(t) - h) < 0.03) return t; throw new Error("no such hour"); };
   const { reg: reg2, run: run2, t: t2 } = makeWorld();

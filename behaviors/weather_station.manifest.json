@@ -6,7 +6,7 @@
   "state": [
     {
       "slot": 0,
-      "label": "sols elapsed on the world clock",
+      "label": "world clock in sols (midnights + fraction)",
       "unit": "sol"
     },
     {

@@ -165,6 +165,10 @@ What the sandbox guarantees, today, with tests:
   never pauses either way.
 - 64 floats of host-owned memory survive a module reload, so "v2" can inherit v1's
   state.
+- Two environment sensors, `ENV_AIR_TEMP_K` (key 14) and `ENV_LOCAL_HOUR` (key 15),
+  come from `runtime/clock.mjs`, the one clock the page's sun and every module
+  share; the temperature is the measured MY36 hourly curve read at the local hour
+  (L1), typical for the hour, not today's weather.
 
 The MVP adds no new guarantees; it adds generic calls (`spawn`, `pose`,
 `state_set`, `signal_emit`, `terrain_height`, `nearest`) so a module can be
@@ -209,7 +213,7 @@ mars-sandbox/                  one repo, one version
 ├── test/                      validator, terrain, rover and smoke tests
 ├── generate.py                CLI prompt → module (becomes the workshop server)
 └── (MVP adds)
-    ├── runtime/               multi-module sandbox runtime, manifest loader
+    ├── runtime/               multi-module sandbox runtime, manifest loader, clock.mjs (world clock + diurnal lookup)
     ├── workshop/              Node server: LLM, asc compile, smoke tests
     └── web/workshop/          the panel
 ```

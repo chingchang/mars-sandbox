@@ -1,6 +1,6 @@
 // Weather station, built only from the generic host calls (X1 sample, extended
 // in L1 with the live read). Two shapes (a mast and a panel) plus a red flag
-// when it is cold; state slots: sols elapsed, air temperature now, flag; one
+// when it is cold; state slots: world clock in sols, air temperature now, flag; one
 // signal (code 100: a pulse every Mars hour). It drives nothing.
 //
 // ENV_AIR_TEMP_K is the typical temperature for the current hour over one
@@ -20,7 +20,7 @@ const LOG_FLAG: i32 = 32;          // value: 1 up, 0 down
 const COLD_K: f32 = 203.15;        // -70 C, from the player's request
 let mast: i32 = -1, panel: i32 = -1, flag: i32 = -1;
 let lastHour: i32 = -1;
-let sols: i32 = 0;                 // sols elapsed on the world clock, counted at each midnight
+let sols: i32 = 0;                 // midnights crossed since the station was placed; slot 0 adds the fraction of the current sol
 let flagUp: i32 = -1;
 
 export function init(): void {
