@@ -1,5 +1,5 @@
 // Bundle web/app.html + compiled behaviors into a single self-contained dist/index.html
-import { readFileSync, writeFileSync, mkdirSync, cpSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync } from "node:fs";
 
 const META = [
   { name:"patrol", label:"Patrol square", prompt:"make the rover patrol a 30 m square around where it started and avoid rocks",
@@ -17,7 +17,6 @@ const META = [
     logNames:{50:"lit (1) / dark (0)"} },
 ];
 
-import { existsSync } from "node:fs";
 const behaviors = META.map(m => ({
   ...m,
   source: readFileSync(`behaviors/${m.name}.ts`, "utf8"),

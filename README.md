@@ -46,7 +46,9 @@ Open the page from `http://localhost:8000`, not by double-clicking `dist/index.h
 a page opened as a file sends `Origin: null` and the workshop server refuses it
 (as it refuses every page that is not local), so the workshop panel cannot build
 anything from a `file://` page. The panel says so in plain words if the server is
-not reachable.
+not reachable. Query options: `?terrain=hirise|mola|procedural`, `?workshop=<url>`
+(default `http://127.0.0.1:8787`), `?fx=low` (no shadows, pixel ratio 1, coarser
+terrain: for weak GPUs, software rendering and the headless tests).
 
 Build something from a description in the workshop panel (the page talks to the
 workshop server on `127.0.0.1:8787`; the key stays on the server):

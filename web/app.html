@@ -149,7 +149,7 @@ import { decodePng16, makeSampler } from "./png16.mjs";
 import { Registry, browserSpawner, BUDGET_MS, TICK_HZ, KIND } from "./runtime/registry.mjs";
 import { buildFactTable } from "./runtime/facts.mjs";
 import { DAY_SECONDS, SUN_PHASE, localHour as clockHour, airTempFromRecord } from "./runtime/clock.mjs";
-import { createWorkshopPanel, inspectorHtml, DEFAULT_WORKSHOP_URL } from "./workshop.mjs";
+import { createWorkshopPanel, inspectorHtml, updateInspector, DEFAULT_WORKSHOP_URL } from "./workshop.mjs";
 const TERRAINS = {
   hirise: { file: "terrain/jezero_hirise_5km", seg: 500 },
   mola:   { file: "terrain/jezero_mola_40km",  seg: 86 },
@@ -173,19 +173,21 @@ async function loadTerrain(choice) {
   const s = makeSampler(await decodePng16(png), meta);
   return { ...s, seg: Math.min(t.seg, meta.grid.width - 1), label: meta.description };
 }
-const terrainChoice = new URLSearchParams(location.search).get("terrain") || "hirise";
+const params = new URLSearchParams(location.search);
+const terrainChoice = params.get("terrain") || "hirise";
+const LOW_FX = params.get("fx") === "low";          // weak GPUs, software rendering, the headless tests: no shadows, pixel ratio 1, coarser terrain
 let terrain;
 try { terrain = await loadTerrain(terrainChoice); }
 catch (e) { console.warn("terrain load failed, using procedural", e); terrain = proceduralTerrain(); terrain.label += " (fallback: " + e.message + ")"; }
-const SIZE = terrain.size, SEG = terrain.seg, h = terrain.h;
+const SIZE = terrain.size, SEG = LOW_FX ? Math.min(terrain.seg, 60) : terrain.seg, h = terrain.h;
 function normalAt(x, z) {
   const e = 0.6, nx = h(x-e,z)-h(x+e,z), nz = h(x,z-e)-h(x,z+e);
   return new THREE.Vector3(nx, 2*e, nz).normalize();
 }
 
-const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("scene"), antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("scene"), antialias: !LOW_FX });
+renderer.setPixelRatio(LOW_FX ? 1 : Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = !LOW_FX;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xc98b5e);
 scene.fog = new THREE.Fog(0xc98b5e, 90, 240);
@@ -411,7 +413,7 @@ function onRegistryEvent(ev) {
   if (ev.type === "loaded" && ev.id === ROVER_ID) { el("modname").textContent = currentName; el("s-imports").textContent = ev.imports.length + " ok"; return; }
   if (ev.type === "spawn" || ev.type === "pose" || ev.type === "remove") { onShapeEvent(ev); return; }
   if (ev.type === "slots" || ev.type === "signal") return;            // the inspector renders slots from the manifest on its own refresh
-  if (ev.type === "loaded" || ev.type === "unloaded" || ev.type === "state") renderObjects();
+  if (ev.type === "loaded" || ev.type === "unloaded" || ev.type === "state") { renderObjects(); if (inspected) renderInspector(); }
   if (ev.type === "actions") {
     if (ev.id === ROVER_ID) applyActions(ev.actions);
     else applyObjectActions(ev.object, ev.actions);
@@ -449,6 +451,7 @@ window.sandbox = {
 // policy, allow-list, budget and watchdog as any other module. The page trusts the server no more.
 const workshopUrl = new URLSearchParams(location.search).get("workshop") || DEFAULT_WORKSHOP_URL;
 let placedCount = 0;
+const explanations = new Map();      // object id -> the explanation its design came with (page side; the manifest stays as the server sent it)
 function placeSpot() {
   if (target.active) return { x: target.x, z: target.z };
   return { x: W.x + Math.sin(W.h + Math.PI / 2) * 3, z: W.z + Math.cos(W.h + Math.PI / 2) * 3 };   // beside the rover
@@ -461,6 +464,7 @@ async function placeFromWorkshop(r) {
     await registry.load(id, { name: r.name, bytes: b64(r.wasm), manifest: r.manifest, logNames: {}, sensors: sensorsForObject(o) });
   } catch (e) { registry.remove(id); markers.get(id)?.removeFromParent(); markers.delete(id); throw e; }
   target.active = false; marker.visible = false;
+  if (typeof r.explanation === "string" && r.explanation) explanations.set(id, r.explanation);
   renderObjects(); openInspector(id);
   return id;
 }
@@ -478,15 +482,25 @@ function renderObjects() {
   }
 }
 function openInspector(id) { inspected = id; renderObjects(); renderInspector(); }
+// Built once per object and on load / unload / state events; the numbers are refreshed in place four
+// times a second (updateInspector), so the citation links stay clickable and the text selectable.
 function renderInspector() {
   const I = el("inspector");
   const o = inspected ? registry.get(inspected) : null;
-  if (!o) { I.hidden = true; return; }
-  I.hidden = false; I.innerHTML = inspectorHtml(factIndex ?? { facts: {}, sources: {}, tier_order: [] }, o, registry.stats(o.id));
+  if (!o) { I.hidden = true; I.dataset.object = ""; return; }
+  I.hidden = false; I.dataset.object = o.id;
+  I.innerHTML = inspectorHtml(factIndex ?? { facts: {}, sources: {}, tier_order: [] }, o, registry.stats(o.id), explanations.get(o.id) ?? null);
+}
+function refreshInspector() {
+  const I = el("inspector");
+  const o = inspected ? registry.get(inspected) : null;
+  if (!o) { if (!I.hidden) renderInspector(); return; }
+  if (I.dataset.object !== o.id || I.hidden) return renderInspector();
+  updateInspector(I, o, registry.stats(o.id));
 }
 el("ws-thread").addEventListener("click", e => { const t = e.target.closest("[data-object]"); if (t) openInspector(t.dataset.object); });
 renderObjects();
-window.sandbox.workshop = workshop; window.sandbox.inspect = openInspector; window.sandbox.placeFromWorkshop = placeFromWorkshop;
+window.sandbox.workshop = workshop; window.sandbox.inspect = openInspector; window.sandbox.placeFromWorkshop = placeFromWorkshop; window.sandbox.explanations = explanations;
 
 // ------------------------------------------------------------------ UI
 let selected = BEHAVIORS[0].name;
@@ -580,7 +594,7 @@ function frame(now) {
     el("s-speed").textContent = Math.abs(W.speed).toFixed(1) + " m/s";
     el("s-pos").textContent = `${W.x.toFixed(0)}, ${W.z.toFixed(0)}`;
     el("s-temp").textContent = airTempRecord ? `${envAirTempK().toFixed(0)} K (${(envAirTempK() - 273.15).toFixed(0)} °C) at ${localHour().toFixed(1)} h` : "—";
-    if (inspected) renderInspector();
+    if (inspected) refreshInspector();
   }
   renderer.render(scene, camera);
 }

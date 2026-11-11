@@ -45,6 +45,7 @@ export function nextStepFor(outcome) {
       detail: `Last problem: ${last}`, question: "What would you like to change? A simpler first version often builds on the first try; or ask the agent what it would simplify.", retry: false };
   }
   if (kind === "declined") return { title: "The design agent stepped back from this one.", detail: outcome.message ?? "", question: "Try describing what it should do in the world, or ask the agent what it could build toward the same goal.", retry: false };
+  if (kind === "busy" && outcome.exhausted) return { title: `The workshop is still busy after ${outcome.attempts} tries.`, detail: "Other builds are ahead of yours.", question: "Your message is back in the box: send it again in a minute.", retry: false };
   if (kind === "busy") return { title: "The workshop is busy with other builds.", detail: `Trying again in ${outcome.retryAfter} s.`, question: null, retry: true };
   if (kind === "unreachable") return { title: `The workshop server is not reachable at ${outcome.url}.`,
     detail: "Start it with `npm run workshop` in the project folder, and open this page from http://localhost:8000 (a page opened as a file cannot reach it).", question: "Once it is running, send your message again.", retry: false };
@@ -63,13 +64,29 @@ export async function askWorkshop(url, messages, { fetchImpl = fetch, tries } = 
   if (res.status === 422) return { kind: "declined", message: body?.error };
   if (res.status === 400 || res.status === 403 || res.status === 413 || res.status === 415) return { kind: "refused", message: body?.error ?? `status ${res.status}` };
   if (!res.ok || !body) return { kind: "error", message: body?.error ?? `status ${res.status}` };
-  if (body.type === "questions") return { kind: "questions", text: body.text };
-  if (body.type === "module") return { kind: "module", ...body };
-  if (body.type === "failed") return { kind: "failed", error: body.error, tries: body.tries, log: body.log };
+  if (body.type === "questions" && typeof body.text === "string") return { kind: "questions", text: body.text };
+  if (body.type === "module") {
+    const bad = moduleAnswerProblem(body);
+    if (bad) return { kind: "error", message: `the workshop's answer was malformed (${bad}); nothing was loaded` };
+    return { kind: "module", ...body, tries: toCount(body.tries), fact_ids: Array.isArray(body.fact_ids) ? body.fact_ids.filter(x => typeof x === "string") : [] };
+  }
+  if (body.type === "failed") return { kind: "failed", error: String(body.error ?? ""), tries: toCount(body.tries), log: Array.isArray(body.log) ? body.log : [] };
   return { kind: "error", message: "unexpected answer from the workshop" };
 }
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+/** A count from the server: a non-negative integer or 0. Anything else (markup, strings) is never rendered. */
+export const toCount = v => (Number.isInteger(v) && v >= 0 ? v : 0);
+/** Why a "module" answer cannot be rendered, or null. The page trusts the server's shape no more than its content. */
+export function moduleAnswerProblem(b) {
+  if (!b || typeof b !== "object") return "not an object";
+  if (!b.manifest || typeof b.manifest !== "object" || Array.isArray(b.manifest)) return "no manifest";
+  if (typeof b.wasm !== "string" || !b.wasm) return "no module bytes";
+  if (typeof b.name !== "string" || !/^[a-z][a-z0-9_]{0,31}$/.test(b.name)) return "bad name";
+  if (b.explanation !== undefined && typeof b.explanation !== "string") return "bad explanation";
+  if (b.report !== undefined && typeof b.report !== "string") return "bad report";
+  return null;
+}
 /** Prose with [fact.id] references turned into chips (title = label and tier). */
 export function proseHtml(index, text) {
   return esc(text).replace(/\[([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)\]/g, (_, id) => {
@@ -95,7 +112,7 @@ export function createWorkshopPanel({ els, index, workshopUrl = DEFAULT_WORKSHOP
 
   function showProposal(r) {
     proposal = r;
-    const m = r.manifest, ids = Array.isArray(m.fact_ids) ? m.fact_ids : [];
+    const m = r.manifest, ids = Array.isArray(m.fact_ids) ? m.fact_ids.filter(x => typeof x === "string") : [];
     const tier = weakestTier(index, ids);
     const dyk = m.did_you_know ? citationsFor(index, m.did_you_know.fact_id) : null;
     const report = r.report ?? "";
@@ -107,7 +124,7 @@ export function createWorkshopPanel({ els, index, workshopUrl = DEFAULT_WORKSHOP
       <p class="pexpl">${proseHtml(index, r.explanation ?? "")}</p>
       <p class="passume">Anything above without a fact id in brackets is your own assumption, not a fact about Mars.</p>
       ${dyk ? `<p class="dyk"><b>Did you know?</b> ${esc(m.did_you_know.text)} <span class="src">${dyk.known ? esc(dyk.sources.map(s => s.citation).join("; ")) : "(fact id not in the index)"}</span></p>` : ""}
-      <p class="report ${nearBudget ? "warn" : ""}"><b>Built and tested</b> in ${r.tries} tr${r.tries === 1 ? "y" : "ies"}: ${esc(report)}${nearBudget ? " (near the budget: some ticks were slow)" : ""}</p>
+      <p class="report ${nearBudget ? "warn" : ""}"><b>Built and tested</b> in ${toCount(r.tries)} tr${toCount(r.tries) === 1 ? "y" : "ies"}: ${esc(report)}${nearBudget ? " (near the budget: some ticks were slow)" : ""}</p>
       <div class="row"><button class="primary" id="ws-place">Place it in the world</button><button class="ghost" id="ws-change">Change something first</button></div>`;
     E.proposal.hidden = false;
     E.proposal.querySelector("#ws-place").onclick = () => placeProposal();
@@ -124,11 +141,11 @@ export function createWorkshopPanel({ els, index, workshopUrl = DEFAULT_WORKSHOP
       const id = await place(r);
       setStatus(`${r.name} is live as "${id}".`, "ok");
       addTurn("host", `Placed <b>${esc(r.name)}</b> as <span class="factref objref" data-object="${esc(id)}">${esc(id)}</span>. ${r.manifest.did_you_know ? "<i>Did you know?</i> " + esc(r.manifest.did_you_know.text) : ""}`);
-      log("host", `placed ${id} from the workshop (${r.tries} tr${r.tries === 1 ? "y" : "ies"}, ${(r.fact_ids ?? []).length} fact id${(r.fact_ids ?? []).length === 1 ? "" : "s"})`);
+      log("host", `placed ${id} from the workshop (${toCount(r.tries)} tr${toCount(r.tries) === 1 ? "y" : "ies"}, ${(r.fact_ids ?? []).length} fact id${(r.fact_ids ?? []).length === 1 ? "" : "s"})`);
       messages.length = 0;                                   // a placed object ends this conversation; the next message starts a new design
     } catch (e) {
-      const step = nextStepFor({ kind: "error", message: e.message });
-      setStatus("", ""); addTurn("agent", `<b>${esc("It did not load: " + e.message)}</b><br>${esc(step.question)}`, "next");
+      setStatus("", ""); addTurn("agent", `<b>${esc("It did not load: " + e.message)}</b><br>${esc("The built module is still here: try placing it again, or change something first.")}`, "next");
+      showProposal(r);                                         // the build is paid for; keep it
     }
   }
 
@@ -144,12 +161,17 @@ export function createWorkshopPanel({ els, index, workshopUrl = DEFAULT_WORKSHOP
     let r;
     for (;;) {
       r = await askWorkshop(workshopUrl, messages, { fetchImpl });
-      if (r.kind !== "busy" || retries >= MAX_RETRIES_WHEN_BUSY) break;
+      if (r.kind !== "busy") break;
+      if (retries >= MAX_RETRIES_WHEN_BUSY) { r = { ...r, exhausted: true, attempts: retries + 1 }; break; }
       retries++;
       const step = nextStepFor(r); setStatus(`${step.title} ${step.detail}`, "loading");
       await sleep(r.retryAfter * 1000);
     }
     setBusy(false);
+    if (r.kind === "busy" || r.kind === "unreachable" || r.kind === "refused" || r.kind === "error") {
+      messages.pop();                                          // undelivered: the model never saw it, so it must not be sent twice
+      E.input.value = text;                                    // and the player gets it back to send again
+    }
     if (r.kind === "questions") {
       messages.push({ role: "assistant", content: r.text });
       setStatus("The agent has a question for you.", "");
@@ -164,33 +186,53 @@ export function createWorkshopPanel({ els, index, workshopUrl = DEFAULT_WORKSHOP
       const step = nextStepFor(r);
       setStatus("", "");
       addTurn("agent", `<b>${esc(step.title)}</b> ${esc(step.detail)}${step.question ? `<br><span class="q">${esc(step.question)}</span>` : ""}`, "next");
-      if (r.kind === "failed" && Array.isArray(r.log)) addTurn("host", `<details><summary>what each try hit</summary>${r.log.map(l => `<div>try ${l.attempt}: ${esc((l.error ?? l.report ?? "ok").split("\n").slice(0, 2).join(" "))}</div>`).join("")}</details>`);
+      if (r.kind === "failed" && Array.isArray(r.log)) addTurn("host", `<details><summary>what each try hit</summary>${r.log.map((l, i) => `<div>try ${toCount(l?.attempt) || i + 1}: ${esc(String(l?.error ?? l?.report ?? "ok").split("\n").slice(0, 2).join(" "))}</div>`).join("")}</details>`);
     }
     E.input.focus();
   }
 
   E.send.onclick = () => send();
   E.input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
-  return { send, messages, get busy() { return busy; }, get proposal() { return proposal; }, placeProposal, workshopUrl };
+  /** Forget the conversation and the thread (a new design). */
+  function reset() { messages.length = 0; proposal = null; E.thread.innerHTML = ""; E.proposal.hidden = true; E.input.value = ""; setStatus("", ""); setBusy(false); }
+  return { send, messages, get busy() { return busy; }, get proposal() { return proposal; }, placeProposal, reset,
+    get workshopUrl() { return workshopUrl; }, set workshopUrl(u) { workshopUrl = String(u); } };
 }
 
-/** The inspector's view of one object: manifest slots with live values, weakest tier, citations, did-you-know. Returns HTML. */
-export function inspectorHtml(index, obj, stats) {
+/**
+ * The inspector's view of one object, built once per object (and on load, unload or a state change):
+ * manifest slots with their labels, the weakest tier, every cited fact with its citations, the did-you-know
+ * line, and the explanation the design came with, rendered like the proposal card so what rests on a fact
+ * id and what is the player's assumption stays visible. Live values go into [data-slot] and [data-ticks]
+ * spans that updateInspector() refreshes in place, so links stay clickable and text stays selectable.
+ */
+export function inspectorHtml(index, obj, stats, explanation = null) {
   const m = obj.manifest ?? null;
   const slots = Array.from(obj.state ?? []);
-  const rows = m?.state?.length ? m.state.map(s => `<div class="stat"><b>${esc(s.label)}${s.unit ? ` (${esc(s.unit)})` : ""}</b><span>${fmt(slots[s.slot])}</span></div>`).join("")
-    : slots.map((v, i) => v !== 0 ? `<div class="stat"><b>slot ${i}</b><span>${fmt(v)}</span></div>` : "").join("") || `<div class="stat"><b>state</b><span>nothing set</span></div>`;
-  const ids = m?.fact_ids ?? [];
+  const rows = m?.state?.length ? m.state.map(s => `<div class="stat"><b>${esc(s.label)}${s.unit ? ` (${esc(s.unit)})` : ""}</b><span data-slot="${toCount(s.slot)}">${fmt(slots[s.slot])}</span></div>`).join("")
+    : slots.map((v, i) => `<div class="stat" data-raw-slot="${i}" ${v !== 0 ? "" : "hidden"}><b>slot ${i}</b><span data-slot="${i}">${fmt(v)}</span></div>`).join("") + `<div class="stat" data-no-state ${slots.some(v => v !== 0) ? "hidden" : ""}><b>state</b><span>nothing set</span></div>`;
+  const ids = (m?.fact_ids ?? []).filter(x => typeof x === "string");
   const tier = weakestTier(index, ids);
   const cites = ids.map(id => { const c = citationsFor(index, id); return `<li><span class="factref" data-fact="${esc(id)}">${esc(id)}</span> <span class="pill tier-${esc(c.tier ?? "unknown")}">${esc(c.tier ?? "not in index")}</span>${c.superseded_by ? ` <span class="pill warn">superseded by ${esc(c.superseded_by)}</span>` : ""}<div class="cite">${c.sources.map(s => s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.citation)}</a>` : esc(s.citation)).join("<br>") || "no source"}</div></li>`; }).join("");
   const dyk = m?.did_you_know ? citationsFor(index, m.did_you_know.fact_id) : null;
   return `
-    <div class="ptitle">${esc(m?.name ?? obj.module?.name ?? obj.id)} <span class="pill">${esc(obj.id)}</span> <span class="pill">v${esc(obj.version ?? 1)}</span> <span class="pill">${esc(obj.owner ?? "?")}</span> ${stats ? `<span class="pill ${stats.enabled ? "running" : "dead"}">${stats.enabled ? "running" : "stopped"}</span>` : ""}</div>
+    <div class="ptitle">${esc(m?.name ?? obj.module?.name ?? obj.id)} <span class="pill">${esc(obj.id)}</span> <span class="pill">v${esc(obj.version ?? 1)}</span> <span class="pill">${esc(obj.owner ?? "?")}</span> <span class="pill ${stats?.enabled ? "running" : "dead"}" data-running>${stats?.enabled ? "running" : "stopped"}</span></div>
     ${m ? `<p class="pdesc">${esc(m.description)} <span class="dim">by ${esc(m.author)}</span></p>` : `<p class="pdesc dim">No manifest: a sample or a hand-loaded module. Slots below are raw numbers.</p>`}
     <div class="stats">${rows}</div>
+    ${explanation ? `<h4>How it was designed</h4><p class="pexpl">${proseHtml(index, explanation)}</p><p class="passume">Anything above without a fact id in brackets is the player's own assumption, not a fact about Mars.</p>` : m ? `<p class="passume">No design explanation was kept for this object; anything not listed under the facts below is an assumption.</p>` : ""}
     <h4>Facts this design rests on ${tier ? `<span class="pill tier-${esc(tier)}" title="weakest provenance tier among them">weakest tier: ${esc(tier)}</span>` : `<span class="pill">none cited</span>`}</h4>
     ${ids.length ? `<ul class="cites">${cites}</ul>` : `<p class="dim">Nothing here is tied to a sourced fact; treat its numbers as the player's assumptions.</p>`}
     ${dyk ? `<p class="dyk"><b>Did you know?</b> ${esc(m.did_you_know.text)} <span class="src">${dyk.known ? esc(dyk.sources.map(s => s.citation).join("; ")) : "(fact id not in the index)"}</span></p>` : ""}
-    ${stats ? `<p class="dim">${stats.ticks} ticks, ${stats.avgMs.toFixed(2)} ms average, ${stats.shapes} shape${stats.shapes === 1 ? "" : "s"}, ${stats.badActions} bad action${stats.badActions === 1 ? "" : "s"}</p>` : ""}`;
+    <p class="dim" data-ticks>${tickLine(stats)}</p>`;
+}
+function tickLine(stats) { return stats ? `${stats.ticks} ticks, ${stats.avgMs.toFixed(2)} ms average, ${stats.shapes} shape${stats.shapes === 1 ? "" : "s"}, ${stats.badActions} bad action${stats.badActions === 1 ? "" : "s"}` : ""; }
+/** Refresh the live numbers inside an inspector built by inspectorHtml(), leaving the rest of the DOM alone. */
+export function updateInspector(root, obj, stats) {
+  const slots = Array.from(obj.state ?? []);
+  for (const span of root.querySelectorAll("[data-slot]")) span.textContent = fmt(slots[Number(span.dataset.slot)]);
+  for (const row of root.querySelectorAll("[data-raw-slot]")) row.hidden = slots[Number(row.dataset.rawSlot)] === 0;
+  const none = root.querySelector("[data-no-state]"); if (none) none.hidden = slots.some(v => v !== 0);
+  const t = root.querySelector("[data-ticks]"); if (t) t.textContent = tickLine(stats);
+  const r = root.querySelector("[data-running]"); if (r) { r.textContent = stats?.enabled ? "running" : "stopped"; r.className = `pill ${stats?.enabled ? "running" : "dead"}`; }
 }
 function fmt(v) { return v === undefined ? "—" : Number.isInteger(v) ? String(v) : Number(v).toFixed(2); }
