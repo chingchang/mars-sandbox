@@ -86,11 +86,15 @@ test("check 2: the beacon sample passes at the 20 m line; 16 m and 24 m radii fa
 
 test("check 3: the solar-panel fixture passes, also when it parks at night; the beacon fails", async () => {
   const r = await solarPanel(await fixture("solar_panel"), null);
-  assert.equal(r.pass, true, r.evidence.join(" | ")); assert.match(r.evidence[0], /settled at every hour/); assert.match(r.evidence[1], /one direction/); assert.match(r.evidence[2], /at noon/);
+  assert.equal(r.pass, true, r.evidence.join(" | ")); assert.match(r.evidence[0], /settled at every hour/); assert.match(r.evidence[1], /one direction/); assert.ok(r.evidence.some(e => /at noon/.test(e)), r.evidence.join(" | "));
   const parking = fixtureSrc("solar_panel").replace("pose(panel, 0.0, 1.4, 0.0, yaw, 0.3);", "pose(panel, 0.0, 1.4, 0.0, elev > 0.0 ? yaw : 0.0, 0.3);");
   const c = await compileAndTest(parking); assert.ok(c.ok, c.ok ? "" : c.error);
   const p = await solarPanel(c.wasm, { name: "p", description: "d", version: 1, author: "a", state: [{ slot: 0, label: "output", unit: "W" }, { slot: 1, label: "yaw", unit: "rad" }] });
-  assert.equal(p.pass, true, p.evidence.join(" | ")); assert.match(p.evidence[2], /^"output" \(W\)/);
+  assert.equal(p.pass, true, p.evidence.join(" | ")); assert.ok(p.evidence.some(e => /^"output" \(W\)/.test(e)), p.evidence.join(" | "));
+  assert.ok(r.evidence.some(e => /settled pitch at/.test(e)), "the settled pitch per hour is in the evidence for single-axis trackers");
+  const slowMotor = await compileAndTest(fixtureSrc("solar_panel_motor").replaceAll("0.5 * dt", "0.2 * dt")); assert.ok(slowMotor.ok);
+  const sm = await solarPanel(slowMotor.wasm, null);
+  assert.equal(sm.pass, true, `0.2 rad/s motor: ${sm.evidence.join(" | ")}`);
   const spin = await solarPanel(await fixture("solar_panel_spin"), null);
   assert.equal(spin.pass, false, spin.evidence.join(" | ")); assert.match(spin.evidence[0], /never settled/);
   const motor = await solarPanel(await fixture("solar_panel_motor"), { name: "m", description: "d", version: 1, author: "a", state: [{ slot: 0, label: "output", unit: "W" }] });
@@ -126,6 +130,9 @@ test("check 5: the dust-gauge fixture's estimate rises fourfold with the tau fac
   const s = await compileAndTest(storm); assert.ok(s.ok);
   const st = await dustGauge(s.wasm, { name: "g", description: "d", version: 1, author: "a", fact_ids: ["jezero.dust.optical_depth_storm_jan2022"], state: [{ slot: 0, label: "dirt estimate" }, { slot: 1, label: "tau" }] });
   assert.equal(st.pass, true, st.evidence.join(" | ")); assert.match(st.evidence[1], /^"dirt estimate"/);
+  const quarter = await compileAndTest(fixtureSrc("dust_gauge").replace("state_set(0, dirt); state_set(1, tau);", "state_set(0, dirt); state_set(1, tau * 0.25);")); assert.ok(quarter.ok);
+  const q = await dustGauge(quarter.wasm, null);
+  assert.equal(q.pass, true, `tau * 0.25 reading: ${q.evidence.join(" | ")}`);
   const hourly = await dustGauge(await fixture("dust_gauge_hourly"), null);
   assert.equal(hourly.pass, true, `hourly gauge: ${hourly.evidence.join(" | ")}`); assert.match(hourly.evidence[1], /ratio 4\.00/);
   assert.equal((await dustGauge(wasm("weather_station"), null)).pass, false);
@@ -181,8 +188,10 @@ test("judge: a good transcript passes with evidence; failed or over-tries transc
     await tamper("questions-removed", x => { x.turns = x.turns.filter(u => u.answer.type !== "questions"); delete x.questions; x.question_fact_grounded = true; }, "fail", /no fact-grounded question/);
     const jr = await tamper("other-punctuation", x => { x.turns[0].answer.text = "Should it read at 1.45 m like the MEDA mast `jezero.temperature.my36_air_hourly_mean`?"; }, "reviewer", /without brackets/);
     assert.deepEqual(jr.question_other_ids, ["jezero.temperature.my36_air_hourly_mean"]);
-    await tamper("three-tries", x => { x.tries = 3; }, "fail", /3 tries/);
-    const groups = summarize([{ system_sha256: "a", verdict: "pass", prompt_number: 1 }, { system_sha256: "a", verdict: "fail", prompt_number: 2 }, { system_sha256: "b", verdict: "reviewer", prompt_number: 1 }]);
-    assert.deepEqual(groups, [{ hash: "a", total: 2, pass: 1, reviewer: 0, prompts: [1, 2] }, { hash: "b", total: 1, pass: 0, reviewer: 1, prompts: [1] }]);
+    await tamper("three-tries", x => { x.tries = 3; x.log = [x.log[0], x.log[0], x.log[0]]; }, "fail", /3 tries/);
+    await tamper("tries-vs-log", x => { x.log = [x.log[0], x.log[0], x.log[0]]; }, "inconsistent", /tries is 1 but the log holds 3/);
+    await tamper("other-prompt", x => { x.turns[0].request_messages[0].content = "A beacon, please."; }, "inconsistent", /first message is not the acceptance prompt/);
+    const groups = summarize([{ system_sha256: "a", git_head: "h1", verdict: "pass", prompt_number: 1 }, { system_sha256: "a", git_head: "h1", verdict: "fail", prompt_number: 2 }, { system_sha256: "a", git_head: "h2", verdict: "pass", prompt_number: 1 }, { system_sha256: "b", verdict: "reviewer", prompt_number: 1 }]);
+    assert.deepEqual(groups, [{ hash: "a", git_head: "h1", total: 2, pass: 1, reviewer: 0, prompts: [1, 2] }, { hash: "a", git_head: "h2", total: 1, pass: 1, reviewer: 0, prompts: [1] }, { hash: "b", git_head: "(no head)", total: 1, pass: 0, reviewer: 1, prompts: [1] }]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

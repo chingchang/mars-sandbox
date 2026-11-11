@@ -1,0 +1,231 @@
+{
+ "prompt_number": 5,
+ "prompt": "A dust gauge that estimates how dirty the panels are from the dust optical depth.",
+ "started": "2026-11-11T20:28:48.045Z",
+ "git_head": "f570f5f37cf5ebea1b63e89f9955dcf015ea45f7",
+ "git_clean": false,
+ "turns": [
+  {
+   "request_messages": [
+    {
+     "role": "user",
+     "content": "A dust gauge that estimates how dirty the panels are from the dust optical depth."
+    }
+   ],
+   "status": 200,
+   "answer": {
+    "type": "questions",
+    "text": "A dust gauge is a great thing to plant next to a solar array. Before I build it, two choices where Mars has an opinion.\n\n**1. Dust in the sky, or dust on the panel?**\n\nOptical depth measures dust hanging in the air above you, not dust lying on the glass. It tells you how much the sky dims the sunlight. At Jezero it was about 0.4 in the clear season of Mars Year 36, ranging from 0.25 to 0.5 [jezero.dust.optical_depth_background_my36]. During the regional storm of January 2022 it peaked around 2 [jezero.dust.optical_depth_storm_jan2022].\n\nHow fast that airborne dust then settles onto a panel is not in our fact index yet. So which should the gauge show?\n\n- **Sky haze:** how much the dust in the air is dimming the panels. This rests on measured records.\n- **Panel grime:** dust building up on the panel over sols. You would choose the settling rate, and the inspector would mark it as your assumption.\n- **Both side by side:** measured haze next to assumed grime. This makes the difference between the two visible to anyone who walks by.\n\nIf you pick grime, here's a twist: Perseverance's weather station detected 374 dust devils in its first 365 sols [jezero.dust.dust_devil_frequency]. Do you want an occasional dust devil to sweep your panel clean? How often one actually crosses *your* panel would be another assumption you set.\n\n**2. Which sky does it read?**\n\nThe world has no live dust sensor yet, so the gauge has to take its optical depth from a record. Options:\n\n- **Clear-season background:** [jezero.dust.optical_depth_background_my36]\n- **Storm peak:** [jezero.dust.optical_depth_storm_jan2022]\n- **A switch between the two:** driven by a \"storm\" signal that you or another player's module can emit. A storm-siren camp could then turn your gauge red for everyone.\n\nTell me which way you'd like to go, and I'll build it.",
+    "tries": 1
+   },
+   "at": "2026-11-11T20:29:06.619Z",
+   "after_failure": false
+  },
+  {
+   "request_messages": [
+    {
+     "role": "user",
+     "content": "A dust gauge that estimates how dirty the panels are from the dust optical depth."
+    },
+    {
+     "role": "assistant",
+     "content": "A dust gauge is a great thing to plant next to a solar array. Before I build it, two choices where Mars has an opinion.\n\n**1. Dust in the sky, or dust on the panel?**\n\nOptical depth measures dust hanging in the air above you, not dust lying on the glass. It tells you how much the sky dims the sunlight. At Jezero it was about 0.4 in the clear season of Mars Year 36, ranging from 0.25 to 0.5 [jezero.dust.optical_depth_background_my36]. During the regional storm of January 2022 it peaked around 2 [jezero.dust.optical_depth_storm_jan2022].\n\nHow fast that airborne dust then settles onto a panel is not in our fact index yet. So which should the gauge show?\n\n- **Sky haze:** how much the dust in the air is dimming the panels. This rests on measured records.\n- **Panel grime:** dust building up on the panel over sols. You would choose the settling rate, and the inspector would mark it as your assumption.\n- **Both side by side:** measured haze next to assumed grime. This makes the difference between the two visible to anyone who walks by.\n\nIf you pick grime, here's a twist: Perseverance's weather station detected 374 dust devils in its first 365 sols [jezero.dust.dust_devil_frequency]. Do you want an occasional dust devil to sweep your panel clean? How often one actually crosses *your* panel would be another assumption you set.\n\n**2. Which sky does it read?**\n\nThe world has no live dust sensor yet, so the gauge has to take its optical depth from a record. Options:\n\n- **Clear-season background:** [jezero.dust.optical_depth_background_my36]\n- **Storm peak:** [jezero.dust.optical_depth_storm_jan2022]\n- **A switch between the two:** driven by a \"storm\" signal that you or another player's module can emit. A storm-siren camp could then turn your gauge red for everyone.\n\nTell me which way you'd like to go, and I'll build it."
+    },
+    {
+     "role": "user",
+     "content": "Both side by side: the measured haze next to an assumed grime that builds up over sols in proportion to the dust in the air; label the settling rate as my assumption. No dust devils for now. Read the clear-season background."
+    }
+   ],
+   "status": 200,
+   "answer": {
+    "type": "module",
+    "name": "dust_gauge",
+    "manifest": {
+     "name": "dust gauge",
+     "description": "Two scales side by side. Left: how much the clear-season dust haze over Jezero dims an overhead sunbeam (measured optical depth). Right: grime on a sample panel, building up each sol in proportion to that haze at a settling rate the player assumed.",
+     "version": 1,
+     "author": "design agent",
+     "state": [
+      {
+       "slot": 0,
+       "label": "dust optical depth, clear season MY36 (measured)",
+       "unit": "1"
+      },
+      {
+       "slot": 1,
+       "label": "overhead sunbeam through haze, exp(-tau)",
+       "unit": "fraction"
+      },
+      {
+       "slot": 2,
+       "label": "grime cover on panel (player's assumption)",
+       "unit": "fraction"
+      },
+      {
+       "slot": 3,
+       "label": "light through grime (player's assumption)",
+       "unit": "fraction"
+      },
+      {
+       "slot": 4,
+       "label": "sols since gauge placed",
+       "unit": "sol"
+      },
+      {
+       "slot": 5,
+       "label": "settling rate (player's assumption)",
+       "unit": "1/sol/tau"
+      }
+     ],
+     "signals": {
+      "emits": [
+       {
+        "code": 210,
+        "label": "overhead sunbeam through haze",
+        "unit": "fraction"
+       },
+       {
+        "code": 211,
+        "label": "panel grime cover (assumed rate)",
+        "unit": "fraction"
+       }
+      ]
+     },
+     "shapes": 6,
+     "fact_ids": [
+      "jezero.dust.optical_depth_background_my36"
+     ],
+     "did_you_know": {
+      "text": "Even in Jezero's clear season of Mars Year 36, the sky held enough dust for a visible optical depth of about 0.4, somewhere between 0.25 and 0.5. That dust is hanging in the air, not lying on your panels.",
+      "fact_id": "jezero.dust.optical_depth_background_my36"
+     }
+    },
+    "source": "// Dust gauge: measured haze next to assumed grime.\n// Left scale: the clear-season dust optical depth at Jezero, MY36\n// [jezero.dust.optical_depth_background_my36], read with fact() and turned into\n// the fraction of an overhead sunbeam that passes the haze, exp(-tau).\n// That is plain attenuation physics: no diffuse skylight, sun straight overhead.\n// Right scale: grime on a sample panel. Each sol it grows by\n// SETTLE_PER_SOL_PER_TAU * tau. The rate is the PLAYER'S ASSUMPTION, not a fact:\n// the index has no dust settling rate. Grime persists in mem slot 0, so a v2\n// with a different rate inherits the dirt already on the panel.\nimport { read, fact, fact_tier, spawn, pose, state_set, signal_emit, log, mem_get, mem_set,\n         ENV_LOCAL_HOUR, SHAPE_CYLINDER, SHAPE_PANEL, SHAPE_SPHERE,\n         FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36 } from \"./host\";\n\n// PLAYER'S ASSUMPTION (placeholder, tune freely): grime cover added per sol per unit optical depth.\nconst SETTLE_PER_SOL_PER_TAU: f32 = 0.002;\n\nconst MEM_GRIME: i32 = 0;      // grime cover 0..1, survives reload\nconst MEM_SOLS: i32 = 1;       // sols elapsed, survives reload\nconst SIG_HAZE: i32 = 210;\nconst SIG_GRIME: i32 = 211;\nconst LOG_TIER: i32 = 1;       // value: provenance tier of the optical-depth fact\nconst LOG_TAU: i32 = 2;        // value: optical depth read at init\nconst LOG_SOL_GRIME: i32 = 3;  // value: grime cover at each new whole sol\n\nlet tau: f32 = 0.0;\nlet haze: f32 = 1.0;           // fraction of overhead sunbeam through the haze\nlet grime: f32 = 0.0;\nlet sols: f32 = 0.0;\nlet lastHour: f32 = -1.0;\nlet lastWholeSol: i32 = 0;\nlet grimeMark: i32 = -1;\n\nexport function init(): void {\n  tau = fact(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36);\n  if (tau != tau) tau = 0.0;                     // NaN guard: unknown key reads as no haze\n  haze = Mathf.exp(-tau);\n  grime = mem_get(MEM_GRIME);\n  sols = mem_get(MEM_SOLS);\n  lastWholeSol = <i32>Mathf.floor(sols);\n\n  const post = spawn(SHAPE_CYLINDER, 0.08, 1.4, 0.08, 0.7, 0.7, 0.7);\n  pose(post, 0.0, 0.7, 0.0, 0.0, 0.0);\n  const panel = spawn(SHAPE_PANEL, 0.8, 0.5, 0.03, 0.1, 0.15, 0.4);   // the sample panel\n  pose(panel, 0.0, 1.5, 0.0, 0.0, 0.4);\n  const hazeScale = spawn(SHAPE_PANEL, 0.1, 1.0, 0.02, 0.85, 0.65, 0.45);\n  pose(hazeScale, -0.6, 0.5, 0.0, 0.0, 0.0);\n  const grimeScale = spawn(SHAPE_PANEL, 0.1, 1.0, 0.02, 0.45, 0.3, 0.2);\n  pose(grimeScale, 0.6, 0.5, 0.0, 0.0, 0.0);\n  const hazeMark = spawn(SHAPE_SPHERE, 0.15, 0.15, 0.15, 1.0, 0.9, 0.5);\n  pose(hazeMark, -0.6, haze, 0.0, 0.0, 0.0);     // height = fraction of light, 1 m = full sun\n  grimeMark = spawn(SHAPE_SPHERE, 0.15, 0.15, 0.15, 0.6, 0.4, 0.2);\n\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36));\n  log(LOG_TAU, tau);\n}\n\nexport function tick(dt: f32): void {\n  const hour = read(ENV_LOCAL_HOUR);\n  if (lastHour >= 0.0) {\n    let dh = hour - lastHour;\n    if (dh < 0.0) dh += 24.0;                    // crossed midnight\n    const dSol: f32 = dh / 24.0;\n    sols += dSol;\n    grime += SETTLE_PER_SOL_PER_TAU * tau * dSol; // assumed: settling proportional to haze\n    if (grime > 1.0) grime = 1.0;\n  }\n  lastHour = hour;\n\n  const through: f32 = 1.0 - grime;              // assumed: covered fraction blocks its share of light\n  pose(grimeMark, 0.6, through, 0.0, 0.0, 0.0);\n\n  const whole = <i32>Mathf.floor(sols);\n  if (whole != lastWholeSol) {\n    lastWholeSol = whole;\n    log(LOG_SOL_GRIME, grime);\n  }\n\n  mem_set(MEM_GRIME, grime);\n  mem_set(MEM_SOLS, sols);\n  state_set(0, tau);\n  state_set(1, haze);\n  state_set(2, grime);\n  state_set(3, through);\n  state_set(4, sols);\n  state_set(5, SETTLE_PER_SOL_PER_TAU);\n  signal_emit(SIG_HAZE, haze);\n  signal_emit(SIG_GRIME, grime);\n}\n",
+    "wasm": "AGFzbQEAAAABKwdgAn99AGABfwF9YAd/fX19fX19AX9gBn99fX19fQBgAX0AYAAAYAF/AX8CkAEKBGhvc3QJc3RhdGVfc2V0AAAEaG9zdAVzcGF3bgACBGhvc3QEcG9zZQADBGhvc3QDbG9nAAAEaG9zdAtzaWduYWxfZW1pdAAABGhvc3QHbWVtX3NldAAABGhvc3QHbWVtX2dldAABBGhvc3QEcmVhZAABBGhvc3QJZmFjdF90aWVyAAYEaG9zdARmYWN0AAEDAwIEBQUFAQEBgAIGMwd9AUMAAAAAC30BQwAAgD8LfQFDAAAAAAt9AUMAAAAAC30BQwAAgL8LfwFBAAt/AUF/CwcYAwRpbml0AAsEdGljawAKBm1lbW9yeQIACs8GAtwBAgF/AX1BDxAHIQAjBEMAAAAAYARAIwMgACMEkyICQwAAwEGSIAIgAkMAAAAAXRtDAADAQZUiApIkAyMCIwBDbxIDO5QgApSSJAIjAkMAAIA/XgRAQwAAgD8kAgsLIAAkBCMGQ5qZGT9DAACAPyMCkyIAQwAAAABDAAAAAEMAAAAAEAIjA478ACIBIwVHBEAgASQFQQMjAhADC0EAIwIQBUEBIwMQBUEAIwAQAEEBIwEQAEECIwIQAEEDIAAQAEEEIwMQAEEFQ28SAzsQAEHSASMBEARB0wEjAhAEC+4EBAJ8AX0BfgJ/QSkQCSQAIwAjAFwEQEMAAAAAJAALIwCMIgK7IQACfSACvCIEQRR2Qf8PcSIFQasITwRAQwAAAAAgBEGAgIB8Rg0BGiACIAKSIAVB+A9PDQEaIAJDAAAAf5QgAkMXcrFCXg0BGkMAAAAAIAJDtPHPwl0NARoLIABE/oIrZUcVR0CiIgBEAAAAAAAAOEOgIgG9IQMgACABRAAAAAAAADjDoKEiAETWUgz/Qi6WP6JEAAAAAAAA8D+gIABElCORS/hqvD6iRPPE+lDOvy4/oCAAIACioqAgA6dBH3FBA3RBgAhqKQMAIANCL4Z8v6K2CyQBQQAQBiQCQQEQBiQDIwOO/AAkBUEBQwrXoz1DMzOzP0MK16M9QzMzMz9DMzMzP0MzMzM/EAFDAAAAAEMzMzM/QwAAAABDAAAAAEMAAAAAEAJBBEPNzEw/QwAAAD9Dj8L1PEPNzMw9Q5qZGT5DzczMPhABQwAAAABDAADAP0MAAAAAQwAAAABDzczMPhACQQRDzczMPUMAAIA/QwrXozxDmplZP0NmZiY/Q2Zm5j4QAUOamRm/QwAAAD9DAAAAAEMAAAAAQwAAAAAQAkEEQ83MzD1DAACAP0MK16M8Q2Zm5j5DmpmZPkPNzEw+EAFDmpkZP0MAAAA/QwAAAABDAAAAAEMAAAAAEAJBAkOamRk+Q5qZGT5DmpkZPkMAAIA/Q2ZmZj9DAAAAPxABQ5qZGb8jAUMAAAAAQwAAAABDAAAAABACQQJDmpkZPkOamRk+Q5qZGT5DmpkZP0PNzMw+Q83MTD4QASQGQQFBKRAIshADQQIjABADCwuCAgEAQYYIC/oB8D90hRXTsNnvPw+J+WxYte8/UVsS0AGT7z97UX08uHLvP6q5aDGHVO8/OGJ1bno47z/h3h/1nR7vPxW3MQr+Bu8/y6k6N6fx7j8iNBJMpt7uPy2JYWAIzu4/Jyo21dq/7j+CT51WK7TuPylUSN0Hq+4/hVU6sH6k7j/NO39mnqDuP3Rf7Oh1n+4/hwHrcxSh7j8TzkyZiaXuP9ugKkLlrO4/5cXNsDe37j+Q8KOCkcTuP10lPrID1e4/rdNamZ/o7j9HXvvydv/uP5xShd2bGe8/aZDv3CA37z+HpPvcGFjvP1+bezOXfO8/2pCkoq+k7z9ARW5bdtDvPw==",
+    "explanation": "**What it does.** A post holds a small sample panel, with two scales beside it. Each scale has a marker whose height is the fraction of light getting through, so 1 m means full sun.\n\n- **Left scale (haze, yellow marker):** reads the clear-season dust optical depth at Jezero for Mars Year 36, about 0.4 within a range of 0.25 to 0.5 [jezero.dust.optical_depth_background_my36]. It shows how much of a straight-down sunbeam survives that haze. The fact is a constant record, so this marker sits still.\n- **Right scale (grime, brown marker):** sinks slowly as dust accumulates on the panel, sol after sol, in proportion to that same optical depth.\n\nThe gauge also:\n- broadcasts both numbers on signals 210 (haze) and 211 (grime), so a neighbour's solar farm or cleaning robot can listen;\n- logs the grime level at every new sol.\n\n**What's measured.** The optical depth is a Perseverance measurement [jezero.dust.optical_depth_background_my36]. The gauge logs its tier on load so the inspector shows it.\n\n**What's simplified physics, not a Mars number.**\n- The haze value is exp(−τ), the standard attenuation of a direct beam with the sun straight overhead.\n- Real panels also catch scattered skylight, which makes the true loss smaller.\n- A low sun crosses more dust, which makes the loss larger.\n- The gauge models neither effect.\n\n**Your assumptions, labelled in the inspector.**\n- **Settling rate:** 0.002 of panel cover per sol per unit optical depth. This is a placeholder: the fact index has no dust settling rate, so it's yours to set.\n- **Grime blocks light in direct proportion:** each fraction of the panel covered blocks that same fraction of light.\n\nAt τ ≈ 0.4 the placeholder rate adds 0.0008 of cover per sol, and on this page a sol passes in 240 s. Change the constant to make dust pile up faster or slower. The grime level and sol count live in persistent memory, so a v2 with a new rate keeps the dirt already on the panel.",
+    "fact_ids": [
+     "jezero.dust.optical_depth_background_my36"
+    ],
+    "report": "ok: 600 ticks, 5411 actuator calls, worst tick 0.959 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+    "tries": 1,
+    "log": [
+     {
+      "attempt": 1,
+      "ok": true,
+      "error": null,
+      "report": "ok: 600 ticks, 5411 actuator calls, worst tick 0.959 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+      "source": "// Dust gauge: measured haze next to assumed grime.\n// Left scale: the clear-season dust optical depth at Jezero, MY36\n// [jezero.dust.optical_depth_background_my36], read with fact() and turned into\n// the fraction of an overhead sunbeam that passes the haze, exp(-tau).\n// That is plain attenuation physics: no diffuse skylight, sun straight overhead.\n// Right scale: grime on a sample panel. Each sol it grows by\n// SETTLE_PER_SOL_PER_TAU * tau. The rate is the PLAYER'S ASSUMPTION, not a fact:\n// the index has no dust settling rate. Grime persists in mem slot 0, so a v2\n// with a different rate inherits the dirt already on the panel.\nimport { read, fact, fact_tier, spawn, pose, state_set, signal_emit, log, mem_get, mem_set,\n         ENV_LOCAL_HOUR, SHAPE_CYLINDER, SHAPE_PANEL, SHAPE_SPHERE,\n         FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36 } from \"./host\";\n\n// PLAYER'S ASSUMPTION (placeholder, tune freely): grime cover added per sol per unit optical depth.\nconst SETTLE_PER_SOL_PER_TAU: f32 = 0.002;\n\nconst MEM_GRIME: i32 = 0;      // grime cover 0..1, survives reload\nconst MEM_SOLS: i32 = 1;       // sols elapsed, survives reload\nconst SIG_HAZE: i32 = 210;\nconst SIG_GRIME: i32 = 211;\nconst LOG_TIER: i32 = 1;       // value: provenance tier of the optical-depth fact\nconst LOG_TAU: i32 = 2;        // value: optical depth read at init\nconst LOG_SOL_GRIME: i32 = 3;  // value: grime cover at each new whole sol\n\nlet tau: f32 = 0.0;\nlet haze: f32 = 1.0;           // fraction of overhead sunbeam through the haze\nlet grime: f32 = 0.0;\nlet sols: f32 = 0.0;\nlet lastHour: f32 = -1.0;\nlet lastWholeSol: i32 = 0;\nlet grimeMark: i32 = -1;\n\nexport function init(): void {\n  tau = fact(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36);\n  if (tau != tau) tau = 0.0;                     // NaN guard: unknown key reads as no haze\n  haze = Mathf.exp(-tau);\n  grime = mem_get(MEM_GRIME);\n  sols = mem_get(MEM_SOLS);\n  lastWholeSol = <i32>Mathf.floor(sols);\n\n  const post = spawn(SHAPE_CYLINDER, 0.08, 1.4, 0.08, 0.7, 0.7, 0.7);\n  pose(post, 0.0, 0.7, 0.0, 0.0, 0.0);\n  const panel = spawn(SHAPE_PANEL, 0.8, 0.5, 0.03, 0.1, 0.15, 0.4);   // the sample panel\n  pose(panel, 0.0, 1.5, 0.0, 0.0, 0.4);\n  const hazeScale = spawn(SHAPE_PANEL, 0.1, 1.0, 0.02, 0.85, 0.65, 0.45);\n  pose(hazeScale, -0.6, 0.5, 0.0, 0.0, 0.0);\n  const grimeScale = spawn(SHAPE_PANEL, 0.1, 1.0, 0.02, 0.45, 0.3, 0.2);\n  pose(grimeScale, 0.6, 0.5, 0.0, 0.0, 0.0);\n  const hazeMark = spawn(SHAPE_SPHERE, 0.15, 0.15, 0.15, 1.0, 0.9, 0.5);\n  pose(hazeMark, -0.6, haze, 0.0, 0.0, 0.0);     // height = fraction of light, 1 m = full sun\n  grimeMark = spawn(SHAPE_SPHERE, 0.15, 0.15, 0.15, 0.6, 0.4, 0.2);\n\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36));\n  log(LOG_TAU, tau);\n}\n\nexport function tick(dt: f32): void {\n  const hour = read(ENV_LOCAL_HOUR);\n  if (lastHour >= 0.0) {\n    let dh = hour - lastHour;\n    if (dh < 0.0) dh += 24.0;                    // crossed midnight\n    const dSol: f32 = dh / 24.0;\n    sols += dSol;\n    grime += SETTLE_PER_SOL_PER_TAU * tau * dSol; // assumed: settling proportional to haze\n    if (grime > 1.0) grime = 1.0;\n  }\n  lastHour = hour;\n\n  const through: f32 = 1.0 - grime;              // assumed: covered fraction blocks its share of light\n  pose(grimeMark, 0.6, through, 0.0, 0.0, 0.0);\n\n  const whole = <i32>Mathf.floor(sols);\n  if (whole != lastWholeSol) {\n    lastWholeSol = whole;\n    log(LOG_SOL_GRIME, grime);\n  }\n\n  mem_set(MEM_GRIME, grime);\n  mem_set(MEM_SOLS, sols);\n  state_set(0, tau);\n  state_set(1, haze);\n  state_set(2, grime);\n  state_set(3, through);\n  state_set(4, sols);\n  state_set(5, SETTLE_PER_SOL_PER_TAU);\n  signal_emit(SIG_HAZE, haze);\n  signal_emit(SIG_GRIME, grime);\n}\n",
+      "manifestText": "{\n  \"name\": \"dust gauge\",\n  \"description\": \"Two scales side by side. Left: how much the clear-season dust haze over Jezero dims an overhead sunbeam (measured optical depth). Right: grime on a sample panel, building up each sol in proportion to that haze at a settling rate the player assumed.\",\n  \"version\": 1,\n  \"author\": \"design agent\",\n  \"state\": [\n    { \"slot\": 0, \"label\": \"dust optical depth, clear season MY36 (measured)\", \"unit\": \"1\" },\n    { \"slot\": 1, \"label\": \"overhead sunbeam through haze, exp(-tau)\", \"unit\": \"fraction\" },\n    { \"slot\": 2, \"label\": \"grime cover on panel (player's assumption)\", \"unit\": \"fraction\" },\n    { \"slot\": 3, \"label\": \"light through grime (player's assumption)\", \"unit\": \"fraction\" },\n    { \"slot\": 4, \"label\": \"sols since gauge placed\", \"unit\": \"sol\" },\n    { \"slot\": 5, \"label\": \"settling rate (player's assumption)\", \"unit\": \"1/sol/tau\" }\n  ],\n  \"signals\": {\n    \"emits\": [\n      { \"code\": 210, \"label\": \"overhead sunbeam through haze\", \"unit\": \"fraction\" },\n      { \"code\": 211, \"label\": \"panel grime cover (assumed rate)\", \"unit\": \"fraction\" }\n    ]\n  },\n  \"shapes\": 6,\n  \"fact_ids\": [\n    \"jezero.dust.optical_depth_background_my36\"\n  ],\n  \"did_you_know\": {\n    \"text\": \"Even in Jezero's clear season of Mars Year 36, the sky held enough dust for a visible optical depth of about 0.4, somewhere between 0.25 and 0.5. That dust is hanging in the air, not lying on your panels.\",\n    \"fact_id\": \"jezero.dust.optical_depth_background_my36\"\n  }\n}"
+     }
+    ]
+   },
+   "at": "2026-11-11T20:30:17.031Z",
+   "after_failure": false
+  }
+ ],
+ "questions": [
+  {
+   "text": "A dust gauge is a great thing to plant next to a solar array. Before I build it, two choices where Mars has an opinion.\n\n**1. Dust in the sky, or dust on the panel?**\n\nOptical depth measures dust hanging in the air above you, not dust lying on the glass. It tells you how much the sky dims the sunlight. At Jezero it was about 0.4 in the clear season of Mars Year 36, ranging from 0.25 to 0.5 [jezero.dust.optical_depth_background_my36]. During the regional storm of January 2022 it peaked around 2 [jezero.dust.optical_depth_storm_jan2022].\n\nHow fast that airborne dust then settles onto a panel is not in our fact index yet. So which should the gauge show?\n\n- **Sky haze:** how much the dust in the air is dimming the panels. This rests on measured records.\n- **Panel grime:** dust building up on the panel over sols. You would choose the settling rate, and the inspector would mark it as your assumption.\n- **Both side by side:** measured haze next to assumed grime. This makes the difference between the two visible to anyone who walks by.\n\nIf you pick grime, here's a twist: Perseverance's weather station detected 374 dust devils in its first 365 sols [jezero.dust.dust_devil_frequency]. Do you want an occasional dust devil to sweep your panel clean? How often one actually crosses *your* panel would be another assumption you set.\n\n**2. Which sky does it read?**\n\nThe world has no live dust sensor yet, so the gauge has to take its optical depth from a record. Options:\n\n- **Clear-season background:** [jezero.dust.optical_depth_background_my36]\n- **Storm peak:** [jezero.dust.optical_depth_storm_jan2022]\n- **A switch between the two:** driven by a \"storm\" signal that you or another player's module can emit. A storm-siren camp could then turn your gauge red for everyone.\n\nTell me which way you'd like to go, and I'll build it.",
+   "fact_ids": [
+    "jezero.dust.optical_depth_background_my36",
+    "jezero.dust.optical_depth_storm_jan2022",
+    "jezero.dust.dust_devil_frequency"
+   ],
+   "fact_ids_other_punctuation": [],
+   "numbers_without_facts": []
+  }
+ ],
+ "model": "claude-opus-5-5",
+ "system_sha256": "3cc2a5f65e70d05ca68a75c1a08506751cda5bfd9d37277bd324d85ef4e674a7",
+ "system_bytes": 82486,
+ "facts_in_prompt": 77,
+ "result": "module",
+ "name": "dust_gauge",
+ "tries": 1,
+ "report": "ok: 600 ticks, 5411 actuator calls, worst tick 0.959 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+ "manifest": {
+  "name": "dust gauge",
+  "description": "Two scales side by side. Left: how much the clear-season dust haze over Jezero dims an overhead sunbeam (measured optical depth). Right: grime on a sample panel, building up each sol in proportion to that haze at a settling rate the player assumed.",
+  "version": 1,
+  "author": "design agent",
+  "state": [
+   {
+    "slot": 0,
+    "label": "dust optical depth, clear season MY36 (measured)",
+    "unit": "1"
+   },
+   {
+    "slot": 1,
+    "label": "overhead sunbeam through haze, exp(-tau)",
+    "unit": "fraction"
+   },
+   {
+    "slot": 2,
+    "label": "grime cover on panel (player's assumption)",
+    "unit": "fraction"
+   },
+   {
+    "slot": 3,
+    "label": "light through grime (player's assumption)",
+    "unit": "fraction"
+   },
+   {
+    "slot": 4,
+    "label": "sols since gauge placed",
+    "unit": "sol"
+   },
+   {
+    "slot": 5,
+    "label": "settling rate (player's assumption)",
+    "unit": "1/sol/tau"
+   }
+  ],
+  "signals": {
+   "emits": [
+    {
+     "code": 210,
+     "label": "overhead sunbeam through haze",
+     "unit": "fraction"
+    },
+    {
+     "code": 211,
+     "label": "panel grime cover (assumed rate)",
+     "unit": "fraction"
+    }
+   ]
+  },
+  "shapes": 6,
+  "fact_ids": [
+   "jezero.dust.optical_depth_background_my36"
+  ],
+  "did_you_know": {
+   "text": "Even in Jezero's clear season of Mars Year 36, the sky held enough dust for a visible optical depth of about 0.4, somewhere between 0.25 and 0.5. That dust is hanging in the air, not lying on your panels.",
+   "fact_id": "jezero.dust.optical_depth_background_my36"
+  }
+ },
+ "source": "// Dust gauge: measured haze next to assumed grime.\n// Left scale: the clear-season dust optical depth at Jezero, MY36\n// [jezero.dust.optical_depth_background_my36], read with fact() and turned into\n// the fraction of an overhead sunbeam that passes the haze, exp(-tau).\n// That is plain attenuation physics: no diffuse skylight, sun straight overhead.\n// Right scale: grime on a sample panel. Each sol it grows by\n// SETTLE_PER_SOL_PER_TAU * tau. The rate is the PLAYER'S ASSUMPTION, not a fact:\n// the index has no dust settling rate. Grime persists in mem slot 0, so a v2\n// with a different rate inherits the dirt already on the panel.\nimport { read, fact, fact_tier, spawn, pose, state_set, signal_emit, log, mem_get, mem_set,\n         ENV_LOCAL_HOUR, SHAPE_CYLINDER, SHAPE_PANEL, SHAPE_SPHERE,\n         FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36 } from \"./host\";\n\n// PLAYER'S ASSUMPTION (placeholder, tune freely): grime cover added per sol per unit optical depth.\nconst SETTLE_PER_SOL_PER_TAU: f32 = 0.002;\n\nconst MEM_GRIME: i32 = 0;      // grime cover 0..1, survives reload\nconst MEM_SOLS: i32 = 1;       // sols elapsed, survives reload\nconst SIG_HAZE: i32 = 210;\nconst SIG_GRIME: i32 = 211;\nconst LOG_TIER: i32 = 1;       // value: provenance tier of the optical-depth fact\nconst LOG_TAU: i32 = 2;        // value: optical depth read at init\nconst LOG_SOL_GRIME: i32 = 3;  // value: grime cover at each new whole sol\n\nlet tau: f32 = 0.0;\nlet haze: f32 = 1.0;           // fraction of overhead sunbeam through the haze\nlet grime: f32 = 0.0;\nlet sols: f32 = 0.0;\nlet lastHour: f32 = -1.0;\nlet lastWholeSol: i32 = 0;\nlet grimeMark: i32 = -1;\n\nexport function init(): void {\n  tau = fact(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36);\n  if (tau != tau) tau = 0.0;                     // NaN guard: unknown key reads as no haze\n  haze = Mathf.exp(-tau);\n  grime = mem_get(MEM_GRIME);\n  sols = mem_get(MEM_SOLS);\n  lastWholeSol = <i32>Mathf.floor(sols);\n\n  const post = spawn(SHAPE_CYLINDER, 0.08, 1.4, 0.08, 0.7, 0.7, 0.7);\n  pose(post, 0.0, 0.7, 0.0, 0.0, 0.0);\n  const panel = spawn(SHAPE_PANEL, 0.8, 0.5, 0.03, 0.1, 0.15, 0.4);   // the sample panel\n  pose(panel, 0.0, 1.5, 0.0, 0.0, 0.4);\n  const hazeScale = spawn(SHAPE_PANEL, 0.1, 1.0, 0.02, 0.85, 0.65, 0.45);\n  pose(hazeScale, -0.6, 0.5, 0.0, 0.0, 0.0);\n  const grimeScale = spawn(SHAPE_PANEL, 0.1, 1.0, 0.02, 0.45, 0.3, 0.2);\n  pose(grimeScale, 0.6, 0.5, 0.0, 0.0, 0.0);\n  const hazeMark = spawn(SHAPE_SPHERE, 0.15, 0.15, 0.15, 1.0, 0.9, 0.5);\n  pose(hazeMark, -0.6, haze, 0.0, 0.0, 0.0);     // height = fraction of light, 1 m = full sun\n  grimeMark = spawn(SHAPE_SPHERE, 0.15, 0.15, 0.15, 0.6, 0.4, 0.2);\n\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36));\n  log(LOG_TAU, tau);\n}\n\nexport function tick(dt: f32): void {\n  const hour = read(ENV_LOCAL_HOUR);\n  if (lastHour >= 0.0) {\n    let dh = hour - lastHour;\n    if (dh < 0.0) dh += 24.0;                    // crossed midnight\n    const dSol: f32 = dh / 24.0;\n    sols += dSol;\n    grime += SETTLE_PER_SOL_PER_TAU * tau * dSol; // assumed: settling proportional to haze\n    if (grime > 1.0) grime = 1.0;\n  }\n  lastHour = hour;\n\n  const through: f32 = 1.0 - grime;              // assumed: covered fraction blocks its share of light\n  pose(grimeMark, 0.6, through, 0.0, 0.0, 0.0);\n\n  const whole = <i32>Mathf.floor(sols);\n  if (whole != lastWholeSol) {\n    lastWholeSol = whole;\n    log(LOG_SOL_GRIME, grime);\n  }\n\n  mem_set(MEM_GRIME, grime);\n  mem_set(MEM_SOLS, sols);\n  state_set(0, tau);\n  state_set(1, haze);\n  state_set(2, grime);\n  state_set(3, through);\n  state_set(4, sols);\n  state_set(5, SETTLE_PER_SOL_PER_TAU);\n  signal_emit(SIG_HAZE, haze);\n  signal_emit(SIG_GRIME, grime);\n}\n",
+ "explanation": "**What it does.** A post holds a small sample panel, with two scales beside it. Each scale has a marker whose height is the fraction of light getting through, so 1 m means full sun.\n\n- **Left scale (haze, yellow marker):** reads the clear-season dust optical depth at Jezero for Mars Year 36, about 0.4 within a range of 0.25 to 0.5 [jezero.dust.optical_depth_background_my36]. It shows how much of a straight-down sunbeam survives that haze. The fact is a constant record, so this marker sits still.\n- **Right scale (grime, brown marker):** sinks slowly as dust accumulates on the panel, sol after sol, in proportion to that same optical depth.\n\nThe gauge also:\n- broadcasts both numbers on signals 210 (haze) and 211 (grime), so a neighbour's solar farm or cleaning robot can listen;\n- logs the grime level at every new sol.\n\n**What's measured.** The optical depth is a Perseverance measurement [jezero.dust.optical_depth_background_my36]. The gauge logs its tier on load so the inspector shows it.\n\n**What's simplified physics, not a Mars number.**\n- The haze value is exp(−τ), the standard attenuation of a direct beam with the sun straight overhead.\n- Real panels also catch scattered skylight, which makes the true loss smaller.\n- A low sun crosses more dust, which makes the loss larger.\n- The gauge models neither effect.\n\n**Your assumptions, labelled in the inspector.**\n- **Settling rate:** 0.002 of panel cover per sol per unit optical depth. This is a placeholder: the fact index has no dust settling rate, so it's yours to set.\n- **Grime blocks light in direct proportion:** each fraction of the panel covered blocks that same fraction of light.\n\nAt τ ≈ 0.4 the placeholder rate adds 0.0008 of cover per sol, and on this page a sol passes in 240 s. Change the constant to make dust pile up faster or slower. The grime level and sol count live in persistent memory, so a v2 with a new rate keeps the dirt already on the panel.",
+ "fact_ids": [
+  "jezero.dust.optical_depth_background_my36"
+ ],
+ "log": [
+  {
+   "attempt": 1,
+   "ok": true,
+   "error": null,
+   "report": "ok: 600 ticks, 5411 actuator calls, worst tick 0.959 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+   "source": "// Dust gauge: measured haze next to assumed grime.\n// Left scale: the clear-season dust optical depth at Jezero, MY36\n// [jezero.dust.optical_depth_background_my36], read with fact() and turned into\n// the fraction of an overhead sunbeam that passes the haze, exp(-tau).\n// That is plain attenuation physics: no diffuse skylight, sun straight overhead.\n// Right scale: grime on a sample panel. Each sol it grows by\n// SETTLE_PER_SOL_PER_TAU * tau. The rate is the PLAYER'S ASSUMPTION, not a fact:\n// the index has no dust settling rate. Grime persists in mem slot 0, so a v2\n// with a different rate inherits the dirt already on the panel.\nimport { read, fact, fact_tier, spawn, pose, state_set, signal_emit, log, mem_get, mem_set,\n         ENV_LOCAL_HOUR, SHAPE_CYLINDER, SHAPE_PANEL, SHAPE_SPHERE,\n         FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36 } from \"./host\";\n\n// PLAYER'S ASSUMPTION (placeholder, tune freely): grime cover added per sol per unit optical depth.\nconst SETTLE_PER_SOL_PER_TAU: f32 = 0.002;\n\nconst MEM_GRIME: i32 = 0;      // grime cover 0..1, survives reload\nconst MEM_SOLS: i32 = 1;       // sols elapsed, survives reload\nconst SIG_HAZE: i32 = 210;\nconst SIG_GRIME: i32 = 211;\nconst LOG_TIER: i32 = 1;       // value: provenance tier of the optical-depth fact\nconst LOG_TAU: i32 = 2;        // value: optical depth read at init\nconst LOG_SOL_GRIME: i32 = 3;  // value: grime cover at each new whole sol\n\nlet tau: f32 = 0.0;\nlet haze: f32 = 1.0;           // fraction of overhead sunbeam through the haze\nlet grime: f32 = 0.0;\nlet sols: f32 = 0.0;\nlet lastHour: f32 = -1.0;\nlet lastWholeSol: i32 = 0;\nlet grimeMark: i32 = -1;\n\nexport function init(): void {\n  tau = fact(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36);\n  if (tau != tau) tau = 0.0;                     // NaN guard: unknown key reads as no haze\n  haze = Mathf.exp(-tau);\n  grime = mem_get(MEM_GRIME);\n  sols = mem_get(MEM_SOLS);\n  lastWholeSol = <i32>Mathf.floor(sols);\n\n  const post = spawn(SHAPE_CYLINDER, 0.08, 1.4, 0.08, 0.7, 0.7, 0.7);\n  pose(post, 0.0, 0.7, 0.0, 0.0, 0.0);\n  const panel = spawn(SHAPE_PANEL, 0.8, 0.5, 0.03, 0.1, 0.15, 0.4);   // the sample panel\n  pose(panel, 0.0, 1.5, 0.0, 0.0, 0.4);\n  const hazeScale = spawn(SHAPE_PANEL, 0.1, 1.0, 0.02, 0.85, 0.65, 0.45);\n  pose(hazeScale, -0.6, 0.5, 0.0, 0.0, 0.0);\n  const grimeScale = spawn(SHAPE_PANEL, 0.1, 1.0, 0.02, 0.45, 0.3, 0.2);\n  pose(grimeScale, 0.6, 0.5, 0.0, 0.0, 0.0);\n  const hazeMark = spawn(SHAPE_SPHERE, 0.15, 0.15, 0.15, 1.0, 0.9, 0.5);\n  pose(hazeMark, -0.6, haze, 0.0, 0.0, 0.0);     // height = fraction of light, 1 m = full sun\n  grimeMark = spawn(SHAPE_SPHERE, 0.15, 0.15, 0.15, 0.6, 0.4, 0.2);\n\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36));\n  log(LOG_TAU, tau);\n}\n\nexport function tick(dt: f32): void {\n  const hour = read(ENV_LOCAL_HOUR);\n  if (lastHour >= 0.0) {\n    let dh = hour - lastHour;\n    if (dh < 0.0) dh += 24.0;                    // crossed midnight\n    const dSol: f32 = dh / 24.0;\n    sols += dSol;\n    grime += SETTLE_PER_SOL_PER_TAU * tau * dSol; // assumed: settling proportional to haze\n    if (grime > 1.0) grime = 1.0;\n  }\n  lastHour = hour;\n\n  const through: f32 = 1.0 - grime;              // assumed: covered fraction blocks its share of light\n  pose(grimeMark, 0.6, through, 0.0, 0.0, 0.0);\n\n  const whole = <i32>Mathf.floor(sols);\n  if (whole != lastWholeSol) {\n    lastWholeSol = whole;\n    log(LOG_SOL_GRIME, grime);\n  }\n\n  mem_set(MEM_GRIME, grime);\n  mem_set(MEM_SOLS, sols);\n  state_set(0, tau);\n  state_set(1, haze);\n  state_set(2, grime);\n  state_set(3, through);\n  state_set(4, sols);\n  state_set(5, SETTLE_PER_SOL_PER_TAU);\n  signal_emit(SIG_HAZE, haze);\n  signal_emit(SIG_GRIME, grime);\n}\n",
+   "manifestText": "{\n  \"name\": \"dust gauge\",\n  \"description\": \"Two scales side by side. Left: how much the clear-season dust haze over Jezero dims an overhead sunbeam (measured optical depth). Right: grime on a sample panel, building up each sol in proportion to that haze at a settling rate the player assumed.\",\n  \"version\": 1,\n  \"author\": \"design agent\",\n  \"state\": [\n    { \"slot\": 0, \"label\": \"dust optical depth, clear season MY36 (measured)\", \"unit\": \"1\" },\n    { \"slot\": 1, \"label\": \"overhead sunbeam through haze, exp(-tau)\", \"unit\": \"fraction\" },\n    { \"slot\": 2, \"label\": \"grime cover on panel (player's assumption)\", \"unit\": \"fraction\" },\n    { \"slot\": 3, \"label\": \"light through grime (player's assumption)\", \"unit\": \"fraction\" },\n    { \"slot\": 4, \"label\": \"sols since gauge placed\", \"unit\": \"sol\" },\n    { \"slot\": 5, \"label\": \"settling rate (player's assumption)\", \"unit\": \"1/sol/tau\" }\n  ],\n  \"signals\": {\n    \"emits\": [\n      { \"code\": 210, \"label\": \"overhead sunbeam through haze\", \"unit\": \"fraction\" },\n      { \"code\": 211, \"label\": \"panel grime cover (assumed rate)\", \"unit\": \"fraction\" }\n    ]\n  },\n  \"shapes\": 6,\n  \"fact_ids\": [\n    \"jezero.dust.optical_depth_background_my36\"\n  ],\n  \"did_you_know\": {\n    \"text\": \"Even in Jezero's clear season of Mars Year 36, the sky held enough dust for a visible optical depth of about 0.4, somewhere between 0.25 and 0.5. That dust is hanging in the air, not lying on your panels.\",\n    \"fact_id\": \"jezero.dust.optical_depth_background_my36\"\n  }\n}"
+  }
+ ],
+ "wasm_sha256": "b54b657751e0cae10b5db8e0c594ef099f458337c0c6d1d0c84832c50de15377",
+ "wasm_base64": "AGFzbQEAAAABKwdgAn99AGABfwF9YAd/fX19fX19AX9gBn99fX19fQBgAX0AYAAAYAF/AX8CkAEKBGhvc3QJc3RhdGVfc2V0AAAEaG9zdAVzcGF3bgACBGhvc3QEcG9zZQADBGhvc3QDbG9nAAAEaG9zdAtzaWduYWxfZW1pdAAABGhvc3QHbWVtX3NldAAABGhvc3QHbWVtX2dldAABBGhvc3QEcmVhZAABBGhvc3QJZmFjdF90aWVyAAYEaG9zdARmYWN0AAEDAwIEBQUFAQEBgAIGMwd9AUMAAAAAC30BQwAAgD8LfQFDAAAAAAt9AUMAAAAAC30BQwAAgL8LfwFBAAt/AUF/CwcYAwRpbml0AAsEdGljawAKBm1lbW9yeQIACs8GAtwBAgF/AX1BDxAHIQAjBEMAAAAAYARAIwMgACMEkyICQwAAwEGSIAIgAkMAAAAAXRtDAADAQZUiApIkAyMCIwBDbxIDO5QgApSSJAIjAkMAAIA/XgRAQwAAgD8kAgsLIAAkBCMGQ5qZGT9DAACAPyMCkyIAQwAAAABDAAAAAEMAAAAAEAIjA478ACIBIwVHBEAgASQFQQMjAhADC0EAIwIQBUEBIwMQBUEAIwAQAEEBIwEQAEECIwIQAEEDIAAQAEEEIwMQAEEFQ28SAzsQAEHSASMBEARB0wEjAhAEC+4EBAJ8AX0BfgJ/QSkQCSQAIwAjAFwEQEMAAAAAJAALIwCMIgK7IQACfSACvCIEQRR2Qf8PcSIFQasITwRAQwAAAAAgBEGAgIB8Rg0BGiACIAKSIAVB+A9PDQEaIAJDAAAAf5QgAkMXcrFCXg0BGkMAAAAAIAJDtPHPwl0NARoLIABE/oIrZUcVR0CiIgBEAAAAAAAAOEOgIgG9IQMgACABRAAAAAAAADjDoKEiAETWUgz/Qi6WP6JEAAAAAAAA8D+gIABElCORS/hqvD6iRPPE+lDOvy4/oCAAIACioqAgA6dBH3FBA3RBgAhqKQMAIANCL4Z8v6K2CyQBQQAQBiQCQQEQBiQDIwOO/AAkBUEBQwrXoz1DMzOzP0MK16M9QzMzMz9DMzMzP0MzMzM/EAFDAAAAAEMzMzM/QwAAAABDAAAAAEMAAAAAEAJBBEPNzEw/QwAAAD9Dj8L1PEPNzMw9Q5qZGT5DzczMPhABQwAAAABDAADAP0MAAAAAQwAAAABDzczMPhACQQRDzczMPUMAAIA/QwrXozxDmplZP0NmZiY/Q2Zm5j4QAUOamRm/QwAAAD9DAAAAAEMAAAAAQwAAAAAQAkEEQ83MzD1DAACAP0MK16M8Q2Zm5j5DmpmZPkPNzEw+EAFDmpkZP0MAAAA/QwAAAABDAAAAAEMAAAAAEAJBAkOamRk+Q5qZGT5DmpkZPkMAAIA/Q2ZmZj9DAAAAPxABQ5qZGb8jAUMAAAAAQwAAAABDAAAAABACQQJDmpkZPkOamRk+Q5qZGT5DmpkZP0PNzMw+Q83MTD4QASQGQQFBKRAIshADQQIjABADCwuCAgEAQYYIC/oB8D90hRXTsNnvPw+J+WxYte8/UVsS0AGT7z97UX08uHLvP6q5aDGHVO8/OGJ1bno47z/h3h/1nR7vPxW3MQr+Bu8/y6k6N6fx7j8iNBJMpt7uPy2JYWAIzu4/Jyo21dq/7j+CT51WK7TuPylUSN0Hq+4/hVU6sH6k7j/NO39mnqDuP3Rf7Oh1n+4/hwHrcxSh7j8TzkyZiaXuP9ugKkLlrO4/5cXNsDe37j+Q8KOCkcTuP10lPrID1e4/rdNamZ/o7j9HXvvydv/uP5xShd2bGe8/aZDv3CA37z+HpPvcGFjvP1+bezOXfO8/2pCkoq+k7z9ARW5bdtDvPw==",
+ "finished": "2026-11-11T20:30:17.033Z",
+ "question_asked_before_build": true,
+ "question_fact_grounded": true,
+ "numbers_without_facts": {
+  "explanation": [
+   "240 s"
+  ]
+ }
+}

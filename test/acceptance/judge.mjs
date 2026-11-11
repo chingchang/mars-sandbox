@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { compileAndTest } from "../../workshop/compile.mts";
-import { questionFactIds, otherFactIds } from "../../workshop/acceptance/run.mts";
+import { questionFactIds, otherFactIds, ACCEPTANCE_PROMPTS } from "../../workshop/acceptance/run.mts";
 import { CHECKS } from "./behaviour.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -35,11 +35,17 @@ export function questionsBeforeBuild(t) {
 /** @returns {{ file, prompt_number, result, verdict: "pass"|"fail"|"inconsistent"|"reviewer", why, ... }} */
 export async function judgeTranscript(file) {
   const t = JSON.parse(readFileSync(file, "utf8"));
-  const out = { file: path.basename(file), prompt_number: t.prompt_number, result: t.result ?? "(none)", tries: t.tries ?? null, system_sha256: t.system_sha256 };
+  const out = { file: path.basename(file), prompt_number: t.prompt_number, result: t.result ?? "(none)", tries: t.tries ?? null, system_sha256: t.system_sha256, git_head: t.git_head ?? null };
   const qs = questionsBeforeBuild(t);
   out.question_fact_ids = [...new Set(qs.flatMap(questionFactIds))];
   out.question_other_ids = [...new Set(qs.flatMap(otherFactIds))];
   out.question_fact_grounded = out.question_fact_ids.length > 0;
+  // cross-checks before anything else: the first message must be the acceptance prompt, and tries must equal the per-try log
+  const first = t.turns?.[0]?.request_messages?.[0];
+  const inconsistent = [];
+  if (!first || first.role !== "user" || first.content !== ACCEPTANCE_PROMPTS[t.prompt_number - 1]) inconsistent.push("the first message is not the acceptance prompt as written");
+  if (Array.isArray(t.log) && Number.isInteger(t.tries) && t.log.length !== t.tries) inconsistent.push(`tries is ${t.tries} but the log holds ${t.log.length}`);
+  if (inconsistent.length) { out.verdict = "inconsistent"; out.why = inconsistent.join("; "); return out; }
   if (t.result !== "module" || typeof t.source !== "string") { out.verdict = "fail"; out.why = `no module in the transcript (${out.result})`; return out; }
   const built = await compileAndTest(t.source);
   out.rebuilt = built.ok; out.smoke = built.ok ? built.report : built.error;
@@ -69,11 +75,11 @@ export async function judgeAll(dir = TRANSCRIPT_DIR) {
   return results;
 }
 
-/** Results grouped by system prompt hash, each group counted on its own. */
+/** Results grouped by system prompt hash and git head, each group counted on its own, so a set run on one commit gets its own line. */
 export function summarize(results) {
   const groups = new Map();
-  for (const r of results) { const k = r.system_sha256 ?? "(no hash)"; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
-  return [...groups.entries()].map(([hash, rs]) => ({ hash, total: rs.length, pass: rs.filter(r => r.verdict === "pass").length, reviewer: rs.filter(r => r.verdict === "reviewer").length, prompts: [...new Set(rs.map(r => r.prompt_number))].sort() }));
+  for (const r of results) { const k = `${r.system_sha256 ?? "(no hash)"}@${r.git_head ?? "(no head)"}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  return [...groups.entries()].map(([k, rs]) => ({ hash: rs[0].system_sha256 ?? "(no hash)", git_head: rs[0].git_head ?? "(no head)", total: rs.length, pass: rs.filter(r => r.verdict === "pass").length, reviewer: rs.filter(r => r.verdict === "reviewer").length, prompts: [...new Set(rs.map(r => r.prompt_number))].sort() }));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
@@ -87,7 +93,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
     console.log(`  verdict: ${r.verdict.toUpperCase()} (${r.why})`);
   }
   const groups = summarize(results);
-  for (const g of groups) console.log(`\nsystem prompt ${g.hash.slice(0, 12)}: ${g.pass} of ${g.total} pass${g.reviewer ? `, ${g.reviewer} for the reviewer` : ""} (prompts ${g.prompts.join(", ")})`);
-  if (groups.length > 1) console.log(`${groups.length} different system prompts in the folder: only one set counts as the final run`);
+  for (const g of groups) console.log(`\nsystem prompt ${g.hash.slice(0, 12)} at git ${g.git_head.slice(0, 7)}: ${g.pass} of ${g.total} pass${g.reviewer ? `, ${g.reviewer} for the reviewer` : ""} (prompts ${g.prompts.join(", ")})`);
+  if (groups.length > 1) console.log(`${groups.length} different prompt-and-commit sets in the folder: only one counts as the final run`);
   process.exit(0);
 }

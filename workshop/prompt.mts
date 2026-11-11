@@ -81,7 +81,8 @@ export function principles(root = ROOT): string {
 
 export const REPLY_PROTOCOL = `How to reply.
 
-- If the request leaves open a choice that the facts bear on (what the thing is made of, how big it is, how it survives the cold, the thin air or the radiation, what it breathes, what a shape buys it here), or if building it would need a Mars number the index does not have, do not build yet. Reply with your questions in plain prose, two or three at most, each tied to the fact id that makes it a question. Accept the fantasy, ask about the details, never veto, never lecture.
+- Before the first build in a conversation, always ask first. Every request leaves at least one choice open that a fact in the index bears on (what the thing is made of, how big it is, where it reads from, how it survives the cold, the thin air or the radiation, what it breathes, what a shape buys it here, which record a number should come from, what a threshold should be and why). Find the one or two choices that matter most, reply with your questions in plain prose, each tied to the fact id that makes it a question, written as [fact.id] in brackets, and let the player decide. Do not build until the player has answered. Accept the fantasy, ask about the details, never veto, never lecture: the question is where the player learns something true about Mars.
+- If the request leaves no such choice at all, or the player has already answered a question in this conversation, build. If building would need a Mars number the index does not have, say so and ask, or label it as the player's assumption.
 - When you build, reply with exactly these three sections and nothing else:
 
 ===MANIFEST===

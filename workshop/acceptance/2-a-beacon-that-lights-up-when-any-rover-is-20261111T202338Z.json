@@ -1,0 +1,216 @@
+{
+ "prompt_number": 2,
+ "prompt": "A beacon that lights up when any rover is within 20 metres.",
+ "started": "2026-11-11T20:22:23.317Z",
+ "git_head": "f570f5f37cf5ebea1b63e89f9955dcf015ea45f7",
+ "git_clean": false,
+ "turns": [
+  {
+   "request_messages": [
+    {
+     "role": "user",
+     "content": "A beacon that lights up when any rover is within 20 metres."
+    }
+   ],
+   "status": 200,
+   "answer": {
+    "type": "questions",
+    "text": "Love it: a beacon that wakes up when a rover comes close is a great building block for a camp. Two details are worth deciding first, because Mars has opinions about both.\n\n**1. What keeps it lit at night?** Sunlight at the top of Mars' atmosphere averages 586 W/m², against 1361 W/m² at Earth [mars.solar.constant_mean] [sun.solar_constant_1au]. A typical night at Jezero also drops to about 193 K (−80 °C) [jezero.temperature.my36_air_diurnal_min]. So a solar-powered beacon would have to save daylight to glow after dark, and keep its electronics from freezing. Which would you like?\n- **Solar-powered:** it reacts to rovers only during daylight hours, or it glows dimmer at night to save charge.\n- **Always on:** you assume a power source we don't model (a buried line from your base, a mystery battery). The inspector will label that as your assumption.\n\n**2. How should it stand out through the dust?** Even in the clear season, Jezero's sky has a dust optical depth of about 0.4 [jezero.dust.optical_depth_background_my36]. In the January 2022 regional storm it peaked around 2 [jezero.dust.optical_depth_storm_jan2022], enough to make distant lights fade into the haze. What should it look like?\n- **Tall and bright:** a tall mast with a big light that's easy to spot from far off.\n- **Small and local:** a low marker, since 20 m is close range anyway.\n- **Signal as well as light:** it also broadcasts \"rover near\" so your other inventions (a gate, a siren, a friend's camp) can react even when nobody can see it.\n\nThe 20 m trigger distance is your design choice, and I'll keep it exactly as you said.",
+    "tries": 1
+   },
+   "at": "2026-11-11T20:22:39.429Z",
+   "after_failure": false
+  },
+  {
+   "request_messages": [
+    {
+     "role": "user",
+     "content": "A beacon that lights up when any rover is within 20 metres."
+    },
+    {
+     "role": "assistant",
+     "content": "Love it: a beacon that wakes up when a rover comes close is a great building block for a camp. Two details are worth deciding first, because Mars has opinions about both.\n\n**1. What keeps it lit at night?** Sunlight at the top of Mars' atmosphere averages 586 W/m², against 1361 W/m² at Earth [mars.solar.constant_mean] [sun.solar_constant_1au]. A typical night at Jezero also drops to about 193 K (−80 °C) [jezero.temperature.my36_air_diurnal_min]. So a solar-powered beacon would have to save daylight to glow after dark, and keep its electronics from freezing. Which would you like?\n- **Solar-powered:** it reacts to rovers only during daylight hours, or it glows dimmer at night to save charge.\n- **Always on:** you assume a power source we don't model (a buried line from your base, a mystery battery). The inspector will label that as your assumption.\n\n**2. How should it stand out through the dust?** Even in the clear season, Jezero's sky has a dust optical depth of about 0.4 [jezero.dust.optical_depth_background_my36]. In the January 2022 regional storm it peaked around 2 [jezero.dust.optical_depth_storm_jan2022], enough to make distant lights fade into the haze. What should it look like?\n- **Tall and bright:** a tall mast with a big light that's easy to spot from far off.\n- **Small and local:** a low marker, since 20 m is close range anyway.\n- **Signal as well as light:** it also broadcasts \"rover near\" so your other inventions (a gate, a siren, a friend's camp) can react even when nobody can see it.\n\nThe 20 m trigger distance is your design choice, and I'll keep it exactly as you said."
+    },
+    {
+     "role": "user",
+     "content": "Always on, with the power source labelled as my assumption. Tall and bright, and broadcast a rover-near signal too so other things can react. Keep 20 m."
+    }
+   ],
+   "status": 200,
+   "answer": {
+    "type": "module",
+    "name": "rover_beacon",
+    "manifest": {
+     "name": "rover beacon",
+     "description": "A tall mast with a big lamp that lights up bright amber while any rover is within 20 m, and broadcasts a 'rover near' signal (and the distance) every tick while one is, so gates, sirens or a neighbour's camp can react. Always on: its power source is the player's assumption.",
+     "version": 1,
+     "author": "design agent",
+     "state": [
+      {
+       "slot": 0,
+       "label": "distance to nearest rover (-1 = no rover)",
+       "unit": "m"
+      },
+      {
+       "slot": 1,
+       "label": "lamp lit (rover within 20 m)",
+       "unit": "flag"
+      }
+     ],
+     "signals": {
+      "emits": [
+       {
+        "code": 200,
+        "label": "rover near (1 while within 20 m)",
+        "unit": "flag"
+       },
+       {
+        "code": 201,
+        "label": "distance to the rover that is near",
+        "unit": "m"
+       }
+      ]
+     },
+     "shapes": 4,
+     "fact_ids": [
+      "jezero.dust.optical_depth_background_my36",
+      "jezero.dust.optical_depth_storm_jan2022",
+      "mars.solar.constant_mean",
+      "sun.solar_constant_1au",
+      "jezero.temperature.my36_air_diurnal_min"
+     ],
+     "did_you_know": {
+      "text": "Even in Jezero's clear season the sky holds enough dust for a visible optical depth of about 0.4, and in the January 2022 regional storm it climbed to about 2. That is why this beacon stands tall and burns bright.",
+      "fact_id": "jezero.dust.optical_depth_background_my36"
+     }
+    },
+    "source": "// Rover beacon: a tall mast with a lamp that lights while any rover is within\n// 20 m, and broadcasts it. Since nearest() returns the closest rover, \"closest\n// within 20 m\" means \"any within 20 m\".\n//\n// Player's choices and assumptions, not facts about Mars:\n//   - trigger distance 20 m (player's request)\n//   - always on: the power source is the player's assumption (not modelled)\n//   - mast height 4 m and lamp colours: design choices for \"tall and bright\"\n// Facts that shaped the design (cited in the manifest): dust optical depth\n// in the clear season and in the Jan 2022 storm (why tall and bright), and the\n// thin sunlight and cold nights (why power is a labelled assumption).\nimport { read, nearest, spawn, pose, remove, state_set, signal_emit, log, fact_tier,\n         POS_X, POS_Z, KIND_ROVER, SHAPE_CYLINDER, SHAPE_SPHERE, SHAPE_CONE,\n         FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36 } from \"./host\";\n\nconst TRIGGER_M: f32 = 20.0;   // player's choice\nconst MAST_H: f32 = 4.0;       // design choice (\"tall\"), not a Mars number\n\nconst SLOT_DIST: i32 = 0;\nconst SLOT_LIT: i32 = 1;\nconst SIG_NEAR: i32 = 200;     // 1 every tick while a rover is within 20 m\nconst SIG_DIST: i32 = 201;     // distance (m) to that rover, same ticks\n\nconst LOG_LIT: i32 = 40;       // value: 1 lamp switched on, 0 switched off\nconst LOG_DIST: i32 = 41;      // value: rover distance (m) when the lamp switched on\nconst LOG_TIER: i32 = 42;      // value: provenance tier of the dust fact\n\nlet mast: i32 = -1;\nlet cap: i32 = -1;\nlet lamp: i32 = -1;\nlet lit: i32 = -1;             // -1 until the first tick decides\n\nfunction setLamp(on: i32): void {\n  // Recolouring means spawn a new shape and remove the old one.\n  const old = lamp;\n  if (on == 1) {\n    lamp = spawn(SHAPE_SPHERE, 0.8, 0.8, 0.8, 1.0, 0.75, 0.15);   // bright amber\n  } else {\n    lamp = spawn(SHAPE_SPHERE, 0.5, 0.5, 0.5, 0.15, 0.12, 0.10);  // dark lens\n  }\n  if (lamp >= 0) pose(lamp, 0.0, MAST_H + 0.4, 0.0, 0.0, 0.0);\n  if (old >= 0) remove(old);\n}\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.15, MAST_H, 0.15, 0.75, 0.75, 0.78);\n  if (mast >= 0) pose(mast, 0.0, MAST_H * 0.5, 0.0, 0.0, 0.0);\n  cap = spawn(SHAPE_CONE, 0.6, 0.35, 0.6, 0.2, 0.2, 0.22);\n  if (cap >= 0) pose(cap, 0.0, MAST_H + 1.0, 0.0, 0.0, 0.0);\n  setLamp(0);\n  lit = 0;\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36));\n}\n\nexport function tick(dt: f32): void {\n  const d = nearest(KIND_ROVER, read(POS_X), read(POS_Z));   // -1 if no rover exists\n  const near: i32 = (d >= 0.0 && d <= TRIGGER_M) ? 1 : 0;\n\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>near);\n\n  if (near != lit) {\n    lit = near;\n    setLamp(near);\n    log(LOG_LIT, <f32>near);\n    if (near == 1) log(LOG_DIST, d);\n  }\n\n  // Re-emit every tick while it holds, so no listener misses it.\n  if (near == 1) {\n    signal_emit(SIG_NEAR, 1.0);\n    signal_emit(SIG_DIST, d);\n  }\n}\n",
+    "wasm": "AGFzbQEAAAABNglgAn99AGABfwBgB399fX19fX0Bf2AGf319fX19AGABfwF9YAF9AGAAAGADf319AX1gAX8BfwKDAQkEaG9zdAVzcGF3bgACBGhvc3QEcG9zZQADBGhvc3QDbG9nAAAEaG9zdAlzdGF0ZV9zZXQAAARob3N0C3NpZ25hbF9lbWl0AAAEaG9zdARyZWFkAAQEaG9zdAZyZW1vdmUAAQRob3N0B25lYXJlc3QABwRob3N0CWZhY3RfdGllcgAIAwQDAQUGBQUBAQCAAgYVBH8BQX8LfwFBfwt/AUF/C38BQX8LBxgDBGluaXQACwR0aWNrAAoGbWVtb3J5AgAKngMDiAEBAX8jAiEBIABBAUYEf0ECQ83MTD9DzcxMP0PNzEw/QwAAgD9DAABAP0OamRk+EAAFQQJDAAAAP0MAAAA/QwAAAD9DmpkZPkOPwvU9Q83MzD0QAAskAiMCQQBOBEAjAkMAAAAAQ83MjEBDAAAAAEMAAAAAQwAAAAAQAQsgAUEATgRAIAEQBgsLawIBfwF9QQBBABAFQQEQBRAHIgBDAACgQV8gAEMAAAAAYHEhAUEAIAAQA0EBIAGyIgIQAyABIwNHBEAgASQDIAEQCUEoIAIQAiABBEBBKSAAEAILCyABBEBByAFDAACAPxAEQckBIAAQBAsLpQEAQQFDmpkZPkMAAIBAQ5qZGT5DAABAP0MAAEA/QxSuRz8QACQAIwBBAE4EQCMAQwAAAABDAAAAQEMAAAAAQwAAAABDAAAAABABC0EDQ5qZGT9DMzOzPkOamRk/Q83MTD5DzcxMPkOuR2E+EAAkASMBQQBOBEAjAUMAAAAAQwAAoEBDAAAAAEMAAAAAQwAAAAAQAQtBABAJQQAkA0EqQSkQCLIQAgs=",
+    "explanation": "**What it does.** Your beacon is a 4 m mast with a dark lens on top and a little cap above it. Every tick it asks the world how far away the nearest rover is. When that rover is 20 m or closer, the lens is swapped for a big bright amber lamp. When the rover moves farther away, the lamp goes dark again.\n\nWhile a rover is in range, the beacon broadcasts two signals every tick:\n- **Signal 200:** the value 1, meaning \"a rover is near\".\n- **Signal 201:** the rover's distance in metres.\n\nYour other inventions can listen for these. A gate or a siren should check signal 200. Because the beacon re-sends it every tick, nothing misses it. The inspector shows the live distance (−1 if there is no rover) and whether the lamp is lit. The log notes each time the lamp switches on or off.\n\n**Facts that shaped it.**\n- **Dust:** Jezero's clear-season sky has a dust optical depth of about 0.4 [jezero.dust.optical_depth_background_my36], and the January 2022 storm pushed it to about 2 [jezero.dust.optical_depth_storm_jan2022]. That's why you chose tall and bright, and why the signal matters when nobody can see the lamp.\n- **Power:** sunlight at Mars averages 586 W/m², against 1361 W/m² at Earth [mars.solar.constant_mean] [sun.solar_constant_1au], and nights drop to about 193 K [jezero.temperature.my36_air_diurnal_min]. So an always-on lamp is not something the world gives you for free.\n\n**Your assumptions, not facts about Mars.**\n- The beacon is always powered. You assumed the power source, and the world doesn't model it.\n- The 20 m trigger distance is your choice.\n- The 4 m mast height, the lamp sizes and the amber colour are my design choices for \"tall and bright\", not Mars numbers.\n- Signal codes 200 and 201 are just labels we picked. Tell me if you'd like different ones to match a friend's camp.",
+    "fact_ids": [
+     "jezero.dust.optical_depth_background_my36",
+     "jezero.dust.optical_depth_storm_jan2022",
+     "mars.solar.constant_mean",
+     "sun.solar_constant_1au",
+     "jezero.temperature.my36_air_diurnal_min"
+    ],
+    "report": "ok: 600 ticks, 2408 actuator calls, worst tick 1.250 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+    "tries": 1,
+    "log": [
+     {
+      "attempt": 1,
+      "ok": true,
+      "error": null,
+      "report": "ok: 600 ticks, 2408 actuator calls, worst tick 1.250 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+      "source": "// Rover beacon: a tall mast with a lamp that lights while any rover is within\n// 20 m, and broadcasts it. Since nearest() returns the closest rover, \"closest\n// within 20 m\" means \"any within 20 m\".\n//\n// Player's choices and assumptions, not facts about Mars:\n//   - trigger distance 20 m (player's request)\n//   - always on: the power source is the player's assumption (not modelled)\n//   - mast height 4 m and lamp colours: design choices for \"tall and bright\"\n// Facts that shaped the design (cited in the manifest): dust optical depth\n// in the clear season and in the Jan 2022 storm (why tall and bright), and the\n// thin sunlight and cold nights (why power is a labelled assumption).\nimport { read, nearest, spawn, pose, remove, state_set, signal_emit, log, fact_tier,\n         POS_X, POS_Z, KIND_ROVER, SHAPE_CYLINDER, SHAPE_SPHERE, SHAPE_CONE,\n         FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36 } from \"./host\";\n\nconst TRIGGER_M: f32 = 20.0;   // player's choice\nconst MAST_H: f32 = 4.0;       // design choice (\"tall\"), not a Mars number\n\nconst SLOT_DIST: i32 = 0;\nconst SLOT_LIT: i32 = 1;\nconst SIG_NEAR: i32 = 200;     // 1 every tick while a rover is within 20 m\nconst SIG_DIST: i32 = 201;     // distance (m) to that rover, same ticks\n\nconst LOG_LIT: i32 = 40;       // value: 1 lamp switched on, 0 switched off\nconst LOG_DIST: i32 = 41;      // value: rover distance (m) when the lamp switched on\nconst LOG_TIER: i32 = 42;      // value: provenance tier of the dust fact\n\nlet mast: i32 = -1;\nlet cap: i32 = -1;\nlet lamp: i32 = -1;\nlet lit: i32 = -1;             // -1 until the first tick decides\n\nfunction setLamp(on: i32): void {\n  // Recolouring means spawn a new shape and remove the old one.\n  const old = lamp;\n  if (on == 1) {\n    lamp = spawn(SHAPE_SPHERE, 0.8, 0.8, 0.8, 1.0, 0.75, 0.15);   // bright amber\n  } else {\n    lamp = spawn(SHAPE_SPHERE, 0.5, 0.5, 0.5, 0.15, 0.12, 0.10);  // dark lens\n  }\n  if (lamp >= 0) pose(lamp, 0.0, MAST_H + 0.4, 0.0, 0.0, 0.0);\n  if (old >= 0) remove(old);\n}\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.15, MAST_H, 0.15, 0.75, 0.75, 0.78);\n  if (mast >= 0) pose(mast, 0.0, MAST_H * 0.5, 0.0, 0.0, 0.0);\n  cap = spawn(SHAPE_CONE, 0.6, 0.35, 0.6, 0.2, 0.2, 0.22);\n  if (cap >= 0) pose(cap, 0.0, MAST_H + 1.0, 0.0, 0.0, 0.0);\n  setLamp(0);\n  lit = 0;\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36));\n}\n\nexport function tick(dt: f32): void {\n  const d = nearest(KIND_ROVER, read(POS_X), read(POS_Z));   // -1 if no rover exists\n  const near: i32 = (d >= 0.0 && d <= TRIGGER_M) ? 1 : 0;\n\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>near);\n\n  if (near != lit) {\n    lit = near;\n    setLamp(near);\n    log(LOG_LIT, <f32>near);\n    if (near == 1) log(LOG_DIST, d);\n  }\n\n  // Re-emit every tick while it holds, so no listener misses it.\n  if (near == 1) {\n    signal_emit(SIG_NEAR, 1.0);\n    signal_emit(SIG_DIST, d);\n  }\n}\n",
+      "manifestText": "{\n  \"name\": \"rover beacon\",\n  \"description\": \"A tall mast with a big lamp that lights up bright amber while any rover is within 20 m, and broadcasts a 'rover near' signal (and the distance) every tick while one is, so gates, sirens or a neighbour's camp can react. Always on: its power source is the player's assumption.\",\n  \"version\": 1,\n  \"author\": \"design agent\",\n  \"state\": [\n    { \"slot\": 0, \"label\": \"distance to nearest rover (-1 = no rover)\", \"unit\": \"m\" },\n    { \"slot\": 1, \"label\": \"lamp lit (rover within 20 m)\", \"unit\": \"flag\" }\n  ],\n  \"signals\": {\n    \"emits\": [\n      { \"code\": 200, \"label\": \"rover near (1 while within 20 m)\", \"unit\": \"flag\" },\n      { \"code\": 201, \"label\": \"distance to the rover that is near\", \"unit\": \"m\" }\n    ]\n  },\n  \"shapes\": 4,\n  \"fact_ids\": [\n    \"jezero.dust.optical_depth_background_my36\",\n    \"jezero.dust.optical_depth_storm_jan2022\",\n    \"mars.solar.constant_mean\",\n    \"sun.solar_constant_1au\",\n    \"jezero.temperature.my36_air_diurnal_min\"\n  ],\n  \"did_you_know\": {\n    \"text\": \"Even in Jezero's clear season the sky holds enough dust for a visible optical depth of about 0.4, and in the January 2022 regional storm it climbed to about 2. That is why this beacon stands tall and burns bright.\",\n    \"fact_id\": \"jezero.dust.optical_depth_background_my36\"\n  }\n}"
+     }
+    ]
+   },
+   "at": "2026-11-11T20:23:38.290Z",
+   "after_failure": false
+  }
+ ],
+ "questions": [
+  {
+   "text": "Love it: a beacon that wakes up when a rover comes close is a great building block for a camp. Two details are worth deciding first, because Mars has opinions about both.\n\n**1. What keeps it lit at night?** Sunlight at the top of Mars' atmosphere averages 586 W/m², against 1361 W/m² at Earth [mars.solar.constant_mean] [sun.solar_constant_1au]. A typical night at Jezero also drops to about 193 K (−80 °C) [jezero.temperature.my36_air_diurnal_min]. So a solar-powered beacon would have to save daylight to glow after dark, and keep its electronics from freezing. Which would you like?\n- **Solar-powered:** it reacts to rovers only during daylight hours, or it glows dimmer at night to save charge.\n- **Always on:** you assume a power source we don't model (a buried line from your base, a mystery battery). The inspector will label that as your assumption.\n\n**2. How should it stand out through the dust?** Even in the clear season, Jezero's sky has a dust optical depth of about 0.4 [jezero.dust.optical_depth_background_my36]. In the January 2022 regional storm it peaked around 2 [jezero.dust.optical_depth_storm_jan2022], enough to make distant lights fade into the haze. What should it look like?\n- **Tall and bright:** a tall mast with a big light that's easy to spot from far off.\n- **Small and local:** a low marker, since 20 m is close range anyway.\n- **Signal as well as light:** it also broadcasts \"rover near\" so your other inventions (a gate, a siren, a friend's camp) can react even when nobody can see it.\n\nThe 20 m trigger distance is your design choice, and I'll keep it exactly as you said.",
+   "fact_ids": [
+    "mars.solar.constant_mean",
+    "sun.solar_constant_1au",
+    "jezero.temperature.my36_air_diurnal_min",
+    "jezero.dust.optical_depth_background_my36",
+    "jezero.dust.optical_depth_storm_jan2022"
+   ],
+   "fact_ids_other_punctuation": [],
+   "numbers_without_facts": [
+    "586 W",
+    "193 K"
+   ]
+  }
+ ],
+ "model": "claude-opus-5-5",
+ "system_sha256": "3cc2a5f65e70d05ca68a75c1a08506751cda5bfd9d37277bd324d85ef4e674a7",
+ "system_bytes": 82486,
+ "facts_in_prompt": 77,
+ "result": "module",
+ "name": "rover_beacon",
+ "tries": 1,
+ "report": "ok: 600 ticks, 2408 actuator calls, worst tick 1.250 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+ "manifest": {
+  "name": "rover beacon",
+  "description": "A tall mast with a big lamp that lights up bright amber while any rover is within 20 m, and broadcasts a 'rover near' signal (and the distance) every tick while one is, so gates, sirens or a neighbour's camp can react. Always on: its power source is the player's assumption.",
+  "version": 1,
+  "author": "design agent",
+  "state": [
+   {
+    "slot": 0,
+    "label": "distance to nearest rover (-1 = no rover)",
+    "unit": "m"
+   },
+   {
+    "slot": 1,
+    "label": "lamp lit (rover within 20 m)",
+    "unit": "flag"
+   }
+  ],
+  "signals": {
+   "emits": [
+    {
+     "code": 200,
+     "label": "rover near (1 while within 20 m)",
+     "unit": "flag"
+    },
+    {
+     "code": 201,
+     "label": "distance to the rover that is near",
+     "unit": "m"
+    }
+   ]
+  },
+  "shapes": 4,
+  "fact_ids": [
+   "jezero.dust.optical_depth_background_my36",
+   "jezero.dust.optical_depth_storm_jan2022",
+   "mars.solar.constant_mean",
+   "sun.solar_constant_1au",
+   "jezero.temperature.my36_air_diurnal_min"
+  ],
+  "did_you_know": {
+   "text": "Even in Jezero's clear season the sky holds enough dust for a visible optical depth of about 0.4, and in the January 2022 regional storm it climbed to about 2. That is why this beacon stands tall and burns bright.",
+   "fact_id": "jezero.dust.optical_depth_background_my36"
+  }
+ },
+ "source": "// Rover beacon: a tall mast with a lamp that lights while any rover is within\n// 20 m, and broadcasts it. Since nearest() returns the closest rover, \"closest\n// within 20 m\" means \"any within 20 m\".\n//\n// Player's choices and assumptions, not facts about Mars:\n//   - trigger distance 20 m (player's request)\n//   - always on: the power source is the player's assumption (not modelled)\n//   - mast height 4 m and lamp colours: design choices for \"tall and bright\"\n// Facts that shaped the design (cited in the manifest): dust optical depth\n// in the clear season and in the Jan 2022 storm (why tall and bright), and the\n// thin sunlight and cold nights (why power is a labelled assumption).\nimport { read, nearest, spawn, pose, remove, state_set, signal_emit, log, fact_tier,\n         POS_X, POS_Z, KIND_ROVER, SHAPE_CYLINDER, SHAPE_SPHERE, SHAPE_CONE,\n         FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36 } from \"./host\";\n\nconst TRIGGER_M: f32 = 20.0;   // player's choice\nconst MAST_H: f32 = 4.0;       // design choice (\"tall\"), not a Mars number\n\nconst SLOT_DIST: i32 = 0;\nconst SLOT_LIT: i32 = 1;\nconst SIG_NEAR: i32 = 200;     // 1 every tick while a rover is within 20 m\nconst SIG_DIST: i32 = 201;     // distance (m) to that rover, same ticks\n\nconst LOG_LIT: i32 = 40;       // value: 1 lamp switched on, 0 switched off\nconst LOG_DIST: i32 = 41;      // value: rover distance (m) when the lamp switched on\nconst LOG_TIER: i32 = 42;      // value: provenance tier of the dust fact\n\nlet mast: i32 = -1;\nlet cap: i32 = -1;\nlet lamp: i32 = -1;\nlet lit: i32 = -1;             // -1 until the first tick decides\n\nfunction setLamp(on: i32): void {\n  // Recolouring means spawn a new shape and remove the old one.\n  const old = lamp;\n  if (on == 1) {\n    lamp = spawn(SHAPE_SPHERE, 0.8, 0.8, 0.8, 1.0, 0.75, 0.15);   // bright amber\n  } else {\n    lamp = spawn(SHAPE_SPHERE, 0.5, 0.5, 0.5, 0.15, 0.12, 0.10);  // dark lens\n  }\n  if (lamp >= 0) pose(lamp, 0.0, MAST_H + 0.4, 0.0, 0.0, 0.0);\n  if (old >= 0) remove(old);\n}\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.15, MAST_H, 0.15, 0.75, 0.75, 0.78);\n  if (mast >= 0) pose(mast, 0.0, MAST_H * 0.5, 0.0, 0.0, 0.0);\n  cap = spawn(SHAPE_CONE, 0.6, 0.35, 0.6, 0.2, 0.2, 0.22);\n  if (cap >= 0) pose(cap, 0.0, MAST_H + 1.0, 0.0, 0.0, 0.0);\n  setLamp(0);\n  lit = 0;\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36));\n}\n\nexport function tick(dt: f32): void {\n  const d = nearest(KIND_ROVER, read(POS_X), read(POS_Z));   // -1 if no rover exists\n  const near: i32 = (d >= 0.0 && d <= TRIGGER_M) ? 1 : 0;\n\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>near);\n\n  if (near != lit) {\n    lit = near;\n    setLamp(near);\n    log(LOG_LIT, <f32>near);\n    if (near == 1) log(LOG_DIST, d);\n  }\n\n  // Re-emit every tick while it holds, so no listener misses it.\n  if (near == 1) {\n    signal_emit(SIG_NEAR, 1.0);\n    signal_emit(SIG_DIST, d);\n  }\n}\n",
+ "explanation": "**What it does.** Your beacon is a 4 m mast with a dark lens on top and a little cap above it. Every tick it asks the world how far away the nearest rover is. When that rover is 20 m or closer, the lens is swapped for a big bright amber lamp. When the rover moves farther away, the lamp goes dark again.\n\nWhile a rover is in range, the beacon broadcasts two signals every tick:\n- **Signal 200:** the value 1, meaning \"a rover is near\".\n- **Signal 201:** the rover's distance in metres.\n\nYour other inventions can listen for these. A gate or a siren should check signal 200. Because the beacon re-sends it every tick, nothing misses it. The inspector shows the live distance (−1 if there is no rover) and whether the lamp is lit. The log notes each time the lamp switches on or off.\n\n**Facts that shaped it.**\n- **Dust:** Jezero's clear-season sky has a dust optical depth of about 0.4 [jezero.dust.optical_depth_background_my36], and the January 2022 storm pushed it to about 2 [jezero.dust.optical_depth_storm_jan2022]. That's why you chose tall and bright, and why the signal matters when nobody can see the lamp.\n- **Power:** sunlight at Mars averages 586 W/m², against 1361 W/m² at Earth [mars.solar.constant_mean] [sun.solar_constant_1au], and nights drop to about 193 K [jezero.temperature.my36_air_diurnal_min]. So an always-on lamp is not something the world gives you for free.\n\n**Your assumptions, not facts about Mars.**\n- The beacon is always powered. You assumed the power source, and the world doesn't model it.\n- The 20 m trigger distance is your choice.\n- The 4 m mast height, the lamp sizes and the amber colour are my design choices for \"tall and bright\", not Mars numbers.\n- Signal codes 200 and 201 are just labels we picked. Tell me if you'd like different ones to match a friend's camp.",
+ "fact_ids": [
+  "jezero.dust.optical_depth_background_my36",
+  "jezero.dust.optical_depth_storm_jan2022",
+  "mars.solar.constant_mean",
+  "sun.solar_constant_1au",
+  "jezero.temperature.my36_air_diurnal_min"
+ ],
+ "log": [
+  {
+   "attempt": 1,
+   "ok": true,
+   "error": null,
+   "report": "ok: 600 ticks, 2408 actuator calls, worst tick 1.250 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+   "source": "// Rover beacon: a tall mast with a lamp that lights while any rover is within\n// 20 m, and broadcasts it. Since nearest() returns the closest rover, \"closest\n// within 20 m\" means \"any within 20 m\".\n//\n// Player's choices and assumptions, not facts about Mars:\n//   - trigger distance 20 m (player's request)\n//   - always on: the power source is the player's assumption (not modelled)\n//   - mast height 4 m and lamp colours: design choices for \"tall and bright\"\n// Facts that shaped the design (cited in the manifest): dust optical depth\n// in the clear season and in the Jan 2022 storm (why tall and bright), and the\n// thin sunlight and cold nights (why power is a labelled assumption).\nimport { read, nearest, spawn, pose, remove, state_set, signal_emit, log, fact_tier,\n         POS_X, POS_Z, KIND_ROVER, SHAPE_CYLINDER, SHAPE_SPHERE, SHAPE_CONE,\n         FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36 } from \"./host\";\n\nconst TRIGGER_M: f32 = 20.0;   // player's choice\nconst MAST_H: f32 = 4.0;       // design choice (\"tall\"), not a Mars number\n\nconst SLOT_DIST: i32 = 0;\nconst SLOT_LIT: i32 = 1;\nconst SIG_NEAR: i32 = 200;     // 1 every tick while a rover is within 20 m\nconst SIG_DIST: i32 = 201;     // distance (m) to that rover, same ticks\n\nconst LOG_LIT: i32 = 40;       // value: 1 lamp switched on, 0 switched off\nconst LOG_DIST: i32 = 41;      // value: rover distance (m) when the lamp switched on\nconst LOG_TIER: i32 = 42;      // value: provenance tier of the dust fact\n\nlet mast: i32 = -1;\nlet cap: i32 = -1;\nlet lamp: i32 = -1;\nlet lit: i32 = -1;             // -1 until the first tick decides\n\nfunction setLamp(on: i32): void {\n  // Recolouring means spawn a new shape and remove the old one.\n  const old = lamp;\n  if (on == 1) {\n    lamp = spawn(SHAPE_SPHERE, 0.8, 0.8, 0.8, 1.0, 0.75, 0.15);   // bright amber\n  } else {\n    lamp = spawn(SHAPE_SPHERE, 0.5, 0.5, 0.5, 0.15, 0.12, 0.10);  // dark lens\n  }\n  if (lamp >= 0) pose(lamp, 0.0, MAST_H + 0.4, 0.0, 0.0, 0.0);\n  if (old >= 0) remove(old);\n}\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.15, MAST_H, 0.15, 0.75, 0.75, 0.78);\n  if (mast >= 0) pose(mast, 0.0, MAST_H * 0.5, 0.0, 0.0, 0.0);\n  cap = spawn(SHAPE_CONE, 0.6, 0.35, 0.6, 0.2, 0.2, 0.22);\n  if (cap >= 0) pose(cap, 0.0, MAST_H + 1.0, 0.0, 0.0, 0.0);\n  setLamp(0);\n  lit = 0;\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_DUST_OPTICAL_DEPTH_BACKGROUND_MY36));\n}\n\nexport function tick(dt: f32): void {\n  const d = nearest(KIND_ROVER, read(POS_X), read(POS_Z));   // -1 if no rover exists\n  const near: i32 = (d >= 0.0 && d <= TRIGGER_M) ? 1 : 0;\n\n  state_set(SLOT_DIST, d);\n  state_set(SLOT_LIT, <f32>near);\n\n  if (near != lit) {\n    lit = near;\n    setLamp(near);\n    log(LOG_LIT, <f32>near);\n    if (near == 1) log(LOG_DIST, d);\n  }\n\n  // Re-emit every tick while it holds, so no listener misses it.\n  if (near == 1) {\n    signal_emit(SIG_NEAR, 1.0);\n    signal_emit(SIG_DIST, d);\n  }\n}\n",
+   "manifestText": "{\n  \"name\": \"rover beacon\",\n  \"description\": \"A tall mast with a big lamp that lights up bright amber while any rover is within 20 m, and broadcasts a 'rover near' signal (and the distance) every tick while one is, so gates, sirens or a neighbour's camp can react. Always on: its power source is the player's assumption.\",\n  \"version\": 1,\n  \"author\": \"design agent\",\n  \"state\": [\n    { \"slot\": 0, \"label\": \"distance to nearest rover (-1 = no rover)\", \"unit\": \"m\" },\n    { \"slot\": 1, \"label\": \"lamp lit (rover within 20 m)\", \"unit\": \"flag\" }\n  ],\n  \"signals\": {\n    \"emits\": [\n      { \"code\": 200, \"label\": \"rover near (1 while within 20 m)\", \"unit\": \"flag\" },\n      { \"code\": 201, \"label\": \"distance to the rover that is near\", \"unit\": \"m\" }\n    ]\n  },\n  \"shapes\": 4,\n  \"fact_ids\": [\n    \"jezero.dust.optical_depth_background_my36\",\n    \"jezero.dust.optical_depth_storm_jan2022\",\n    \"mars.solar.constant_mean\",\n    \"sun.solar_constant_1au\",\n    \"jezero.temperature.my36_air_diurnal_min\"\n  ],\n  \"did_you_know\": {\n    \"text\": \"Even in Jezero's clear season the sky holds enough dust for a visible optical depth of about 0.4, and in the January 2022 regional storm it climbed to about 2. That is why this beacon stands tall and burns bright.\",\n    \"fact_id\": \"jezero.dust.optical_depth_background_my36\"\n  }\n}"
+  }
+ ],
+ "wasm_sha256": "37cb9d9fb205658e0311622c0666d0fca081424cc77dd8868b5efa7e9920a660",
+ "wasm_base64": "AGFzbQEAAAABNglgAn99AGABfwBgB399fX19fX0Bf2AGf319fX19AGABfwF9YAF9AGAAAGADf319AX1gAX8BfwKDAQkEaG9zdAVzcGF3bgACBGhvc3QEcG9zZQADBGhvc3QDbG9nAAAEaG9zdAlzdGF0ZV9zZXQAAARob3N0C3NpZ25hbF9lbWl0AAAEaG9zdARyZWFkAAQEaG9zdAZyZW1vdmUAAQRob3N0B25lYXJlc3QABwRob3N0CWZhY3RfdGllcgAIAwQDAQUGBQUBAQCAAgYVBH8BQX8LfwFBfwt/AUF/C38BQX8LBxgDBGluaXQACwR0aWNrAAoGbWVtb3J5AgAKngMDiAEBAX8jAiEBIABBAUYEf0ECQ83MTD9DzcxMP0PNzEw/QwAAgD9DAABAP0OamRk+EAAFQQJDAAAAP0MAAAA/QwAAAD9DmpkZPkOPwvU9Q83MzD0QAAskAiMCQQBOBEAjAkMAAAAAQ83MjEBDAAAAAEMAAAAAQwAAAAAQAQsgAUEATgRAIAEQBgsLawIBfwF9QQBBABAFQQEQBRAHIgBDAACgQV8gAEMAAAAAYHEhAUEAIAAQA0EBIAGyIgIQAyABIwNHBEAgASQDIAEQCUEoIAIQAiABBEBBKSAAEAILCyABBEBByAFDAACAPxAEQckBIAAQBAsLpQEAQQFDmpkZPkMAAIBAQ5qZGT5DAABAP0MAAEA/QxSuRz8QACQAIwBBAE4EQCMAQwAAAABDAAAAQEMAAAAAQwAAAABDAAAAABABC0EDQ5qZGT9DMzOzPkOamRk/Q83MTD5DzcxMPkOuR2E+EAAkASMBQQBOBEAjAUMAAAAAQwAAoEBDAAAAAEMAAAAAQwAAAAAQAQtBABAJQQAkA0EqQSkQCLIQAgs=",
+ "finished": "2026-11-11T20:23:38.292Z",
+ "question_asked_before_build": true,
+ "question_fact_grounded": true,
+ "numbers_without_facts": {
+  "question 1": [
+   "586 W",
+   "193 K"
+  ],
+  "explanation": [
+   "586 W"
+  ]
+ }
+}

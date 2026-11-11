@@ -1,0 +1,208 @@
+{
+ "prompt_number": 1,
+ "prompt": "A weather station that logs temperature every hour and raises a red flag when it drops below minus 70.",
+ "started": "2026-11-11T20:07:56.762Z",
+ "git_head": "4eb4844960d109f1ade4e6a4479f68e60a4e1026",
+ "git_clean": true,
+ "turns": [
+  {
+   "request_messages": [
+    {
+     "role": "user",
+     "content": "A weather station that logs temperature every hour and raises a red flag when it drops below minus 70."
+    }
+   ],
+   "status": 200,
+   "answer": {
+    "type": "module",
+    "name": "cold_flag_weather_station",
+    "manifest": {
+     "name": "cold-flag weather station",
+     "description": "A mast with a panel that logs the air temperature at the start of every local Mars hour and raises a red flag while it is colder than -70 C. It counts the cold hours each sol and broadcasts the flag for other players' builds.",
+     "version": 1,
+     "author": "design agent",
+     "state": [
+      {
+       "slot": 0,
+       "label": "air temperature now (typical hour, MY36)",
+       "unit": "K"
+      },
+      {
+       "slot": 1,
+       "label": "air temperature now (typical hour, MY36)",
+       "unit": "C"
+      },
+      {
+       "slot": 2,
+       "label": "red flag (below -70 C)",
+       "unit": "flag"
+      },
+      {
+       "slot": 3,
+       "label": "hours starting below -70 C this sol",
+       "unit": "h"
+      },
+      {
+       "slot": 4,
+       "label": "typical nightly minimum (MY36 record)",
+       "unit": "K"
+      }
+     ],
+     "signals": {
+      "emits": [
+       {
+        "code": 100,
+        "label": "hour pulse (local hour)",
+        "unit": "h"
+       },
+       {
+        "code": 101,
+        "label": "cold flag up (1 while below -70 C)",
+        "unit": "flag"
+       }
+      ]
+     },
+     "shapes": 3,
+     "fact_ids": [
+      "jezero.temperature.my36_air_hourly_mean",
+      "jezero.temperature.my36_air_diurnal_min"
+     ],
+     "did_you_know": {
+      "text": "On a typical night at Jezero the air 1.45 m above the ground drops to about 193 K, which is -80 C. A -70 C flag should go up most nights, not just on rare cold snaps.",
+      "fact_id": "jezero.temperature.my36_air_diurnal_min"
+     }
+    },
+    "source": "// Cold-flag weather station. It has a mast, a panel and a red cone flag that is spawned while it is cold.\n// The temperature comes from the live read ENV_AIR_TEMP_K, which is the typical temperature\n// for the current local hour over Mars Year 36 (fact jezero.temperature.my36_air_hourly_mean).\n// That is a typical-day curve, not today's weather.\n// The -70 C threshold is the player's choice, not a fact about Mars. 273.15 is the kelvin/celsius unit offset.\nimport { read, fact, fact_tier, spawn, pose, remove, state_set, signal_emit, log,\n         ENV_AIR_TEMP_K, ENV_LOCAL_HOUR, SHAPE_CYLINDER, SHAPE_PANEL, SHAPE_CONE,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_DIURNAL_MIN } from \"./host\";\n\nconst SLOT_T_K: i32 = 0;\nconst SLOT_T_C: i32 = 1;\nconst SLOT_FLAG: i32 = 2;\nconst SLOT_COLD_HOURS: i32 = 3;\nconst SLOT_TYPICAL_MIN_K: i32 = 4;\nconst SIGNAL_HOUR: i32 = 100;          // value: local hour 0..23\nconst SIGNAL_COLD: i32 = 101;          // value: 1, re-emitted every tick while the flag is up\nconst LOG_HOUR_TEMP: i32 = 1;          // value: air temperature at the start of the hour (K)\nconst LOG_FLAG: i32 = 2;               // value: 1 flag raised, 0 flag lowered\nconst LOG_TIER: i32 = 3;               // value: provenance tier of the hourly temperature record\nconst LOG_TYPICAL_MIN: i32 = 4;        // value: typical nightly minimum read from the fact index (K)\nconst KELVIN_OFFSET: f32 = 273.15;     // unit conversion, not a Mars number\nconst COLD_K: f32 = -70.0 + KELVIN_OFFSET; // player's threshold: -70 C\n\nlet mast: i32 = -1;\nlet panel: i32 = -1;\nlet flag: i32 = -1;\nlet flagUp: i32 = -1;                  // -1 = unknown yet, so the first tick sets it\nlet lastHour: i32 = -1;\nlet coldHours: i32 = 0;\nlet typicalMinK: f32 = 0.0;\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.1, 2.0, 0.1, 0.8, 0.8, 0.8);\n  panel = spawn(SHAPE_PANEL, 0.6, 0.4, 0.05, 0.1, 0.3, 0.9);\n  pose(mast, 0.0, 1.0, 0.0, 0.0, 0.0);\n  pose(panel, 0.0, 2.1, 0.0, 0.0, 0.3);\n  typicalMinK = fact(FACT_JEZERO_TEMPERATURE_MY36_AIR_DIURNAL_MIN);\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN));\n  if (typicalMinK == typicalMinK) log(LOG_TYPICAL_MIN, typicalMinK); // skip if NaN\n}\n\nexport function tick(dt: f32): void {\n  const temp = read(ENV_AIR_TEMP_K);\n  const hourNow = read(ENV_LOCAL_HOUR);\n  const hour = <i32>Math.floor(hourNow);\n\n  if (hour != lastHour) {\n    if (lastHour >= 0 && hour < lastHour) coldHours = 0;  // crossed midnight: new sol\n    lastHour = hour;\n    if (temp < COLD_K) coldHours += 1;\n    signal_emit(SIGNAL_HOUR, <f32>hour);\n    log(LOG_HOUR_TEMP, temp);                              // the hourly temperature log\n  }\n\n  const cold: i32 = temp < COLD_K ? 1 : 0;\n  if (cold != flagUp) {\n    flagUp = cold;\n    if (flag >= 0) { remove(flag); flag = -1; }\n    if (cold == 1) {\n      flag = spawn(SHAPE_CONE, 0.5, 0.6, 0.5, 1.0, 0.1, 0.1);\n      pose(flag, 0.0, 2.6, 0.0, 0.0, 0.0);\n    }\n    log(LOG_FLAG, <f32>cold);\n  }\n  if (cold == 1) signal_emit(SIGNAL_COLD, 1.0);\n\n  state_set(SLOT_T_K, temp);\n  state_set(SLOT_T_C, temp - KELVIN_OFFSET);\n  state_set(SLOT_FLAG, <f32>cold);\n  state_set(SLOT_COLD_HOURS, <f32>coldHours);\n  if (typicalMinK == typicalMinK) state_set(SLOT_TYPICAL_MIN_K, typicalMinK);\n}\n",
+    "wasm": "AGFzbQEAAAABLwhgAn99AGABfwF9YAd/fX19fX19AX9gBn99fX19fQBgAX0AYAAAYAF/AGABfwF/AoABCQRob3N0CXN0YXRlX3NldAAABGhvc3QDbG9nAAAEaG9zdAVzcGF3bgACBGhvc3QEcG9zZQADBGhvc3QLc2lnbmFsX2VtaXQAAARob3N0BHJlYWQAAQRob3N0BnJlbW92ZQAGBGhvc3QJZmFjdF90aWVyAAcEaG9zdARmYWN0AAEDAwIEBQUFAQEAgAIGJwd/AUF/C38BQX8LfwFBfwt/AUF/C38BQX8LfwFBAAt9AUMAAAAACwcYAwRpbml0AAoEdGljawAJBm1lbW9yeQIACqUDAv4BAQF/QQ4QBSEAQQ8QBbuc/AIiASMERwRAIAEjBEgjBEEATnEEQEEAJAULIAEkBCAAQ2YmS0NdBEAjBUEBaiQFC0HkACABshAEQQEgABABCyAAQ2YmS0NdIgEjA0cEQCABJAMjAkEATgRAIwIQBkF/JAILIAEEQEEDQwAAAD9DmpkZP0MAAAA/QwAAgD9DzczMPUPNzMw9EAIkAiMCQwAAAABDZmYmQEMAAAAAQwAAAABDAAAAABADC0ECIAGyEAELIAEEQEHlAEMAAIA/EAQLQQAgABAAQQEgAEMzk4jDkhAAQQIgAbIQAEEDIwWyEAAjBiMGWwRAQQQjBhAACwuiAQBBAUPNzMw9QwAAAEBDzczMPUPNzEw/Q83MTD9DzcxMPxACJABBBEOamRk/Q83MzD5DzcxMPUPNzMw9Q5qZmT5DZmZmPxACJAEjAEMAAAAAQwAAgD9DAAAAAEMAAAAAQwAAAAAQAyMBQwAAAABDZmYGQEMAAAAAQwAAAABDmpmZPhADQTEQCCQGQQNB1AAQB7IQASMGIwZbBEBBBCMGEAELCw==",
+    "explanation": "**What it does.** The station is a mast with a blue panel.\n\n- **Hourly log.** At the start of every local Mars hour it logs the air temperature (log code 1) and sends an hour pulse on signal 100.\n- **Red flag.** Whenever the air is colder than -70 C, a red cone goes up on top of the mast. While the flag is up, the station broadcasts signal 101 every tick, so other players can wire a heater, a light or an alarm to it.\n- **Inspector panel.** You will see:\n  - the temperature now, in kelvin and in Celsius\n  - whether the flag is up\n  - how many hours this sol started below -70 C\n  - the typical nightly minimum from the fact index, for comparison\n\n**Which facts shaped it.**\n- The temperature is the typical value for the current hour, averaged over a whole Mars year measured by Perseverance's weather instruments [jezero.temperature.my36_air_hourly_mean]. It is a typical-day curve, not live weather, and it has no seasons. The station logs that record's tier at start-up, so the inspector shows how solid it is.\n- A typical night at Jezero bottoms out around 193 K, which is -80 C [jezero.temperature.my36_air_diurnal_min]. That record's range is 188.7 to 196 K, and every value in it is below your -70 C line. Expect the flag to go up every night and come down after sunrise, so it reads more like a \"night is here\" signal than an alarm.\n\n**Your assumptions, not facts.**\n- The -70 C threshold is your choice.\n- \"Every hour\" means each local true solar hour on the world clock.\n- The mast, panel and flag sizes and colours are cosmetic.\n- 273.15 is just the conversion between kelvin and Celsius.\n\nIf you want a flag that marks unusual cold, try a lower threshold. The hourly averages are smoother than any single night, so real individual nights go colder than this curve shows.",
+    "fact_ids": [
+     "jezero.temperature.my36_air_hourly_mean",
+     "jezero.temperature.my36_air_diurnal_min"
+    ],
+    "report": "ok: 600 ticks, 3104 actuator calls, worst tick 1.707 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+    "tries": 1,
+    "log": [
+     {
+      "attempt": 1,
+      "ok": true,
+      "error": null,
+      "report": "ok: 600 ticks, 3104 actuator calls, worst tick 1.707 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+      "source": "// Cold-flag weather station. It has a mast, a panel and a red cone flag that is spawned while it is cold.\n// The temperature comes from the live read ENV_AIR_TEMP_K, which is the typical temperature\n// for the current local hour over Mars Year 36 (fact jezero.temperature.my36_air_hourly_mean).\n// That is a typical-day curve, not today's weather.\n// The -70 C threshold is the player's choice, not a fact about Mars. 273.15 is the kelvin/celsius unit offset.\nimport { read, fact, fact_tier, spawn, pose, remove, state_set, signal_emit, log,\n         ENV_AIR_TEMP_K, ENV_LOCAL_HOUR, SHAPE_CYLINDER, SHAPE_PANEL, SHAPE_CONE,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_DIURNAL_MIN } from \"./host\";\n\nconst SLOT_T_K: i32 = 0;\nconst SLOT_T_C: i32 = 1;\nconst SLOT_FLAG: i32 = 2;\nconst SLOT_COLD_HOURS: i32 = 3;\nconst SLOT_TYPICAL_MIN_K: i32 = 4;\nconst SIGNAL_HOUR: i32 = 100;          // value: local hour 0..23\nconst SIGNAL_COLD: i32 = 101;          // value: 1, re-emitted every tick while the flag is up\nconst LOG_HOUR_TEMP: i32 = 1;          // value: air temperature at the start of the hour (K)\nconst LOG_FLAG: i32 = 2;               // value: 1 flag raised, 0 flag lowered\nconst LOG_TIER: i32 = 3;               // value: provenance tier of the hourly temperature record\nconst LOG_TYPICAL_MIN: i32 = 4;        // value: typical nightly minimum read from the fact index (K)\nconst KELVIN_OFFSET: f32 = 273.15;     // unit conversion, not a Mars number\nconst COLD_K: f32 = -70.0 + KELVIN_OFFSET; // player's threshold: -70 C\n\nlet mast: i32 = -1;\nlet panel: i32 = -1;\nlet flag: i32 = -1;\nlet flagUp: i32 = -1;                  // -1 = unknown yet, so the first tick sets it\nlet lastHour: i32 = -1;\nlet coldHours: i32 = 0;\nlet typicalMinK: f32 = 0.0;\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.1, 2.0, 0.1, 0.8, 0.8, 0.8);\n  panel = spawn(SHAPE_PANEL, 0.6, 0.4, 0.05, 0.1, 0.3, 0.9);\n  pose(mast, 0.0, 1.0, 0.0, 0.0, 0.0);\n  pose(panel, 0.0, 2.1, 0.0, 0.0, 0.3);\n  typicalMinK = fact(FACT_JEZERO_TEMPERATURE_MY36_AIR_DIURNAL_MIN);\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN));\n  if (typicalMinK == typicalMinK) log(LOG_TYPICAL_MIN, typicalMinK); // skip if NaN\n}\n\nexport function tick(dt: f32): void {\n  const temp = read(ENV_AIR_TEMP_K);\n  const hourNow = read(ENV_LOCAL_HOUR);\n  const hour = <i32>Math.floor(hourNow);\n\n  if (hour != lastHour) {\n    if (lastHour >= 0 && hour < lastHour) coldHours = 0;  // crossed midnight: new sol\n    lastHour = hour;\n    if (temp < COLD_K) coldHours += 1;\n    signal_emit(SIGNAL_HOUR, <f32>hour);\n    log(LOG_HOUR_TEMP, temp);                              // the hourly temperature log\n  }\n\n  const cold: i32 = temp < COLD_K ? 1 : 0;\n  if (cold != flagUp) {\n    flagUp = cold;\n    if (flag >= 0) { remove(flag); flag = -1; }\n    if (cold == 1) {\n      flag = spawn(SHAPE_CONE, 0.5, 0.6, 0.5, 1.0, 0.1, 0.1);\n      pose(flag, 0.0, 2.6, 0.0, 0.0, 0.0);\n    }\n    log(LOG_FLAG, <f32>cold);\n  }\n  if (cold == 1) signal_emit(SIGNAL_COLD, 1.0);\n\n  state_set(SLOT_T_K, temp);\n  state_set(SLOT_T_C, temp - KELVIN_OFFSET);\n  state_set(SLOT_FLAG, <f32>cold);\n  state_set(SLOT_COLD_HOURS, <f32>coldHours);\n  if (typicalMinK == typicalMinK) state_set(SLOT_TYPICAL_MIN_K, typicalMinK);\n}\n",
+      "manifestText": "{\n  \"name\": \"cold-flag weather station\",\n  \"description\": \"A mast with a panel that logs the air temperature at the start of every local Mars hour and raises a red flag while it is colder than -70 C. It counts the cold hours each sol and broadcasts the flag for other players' builds.\",\n  \"version\": 1,\n  \"author\": \"design agent\",\n  \"state\": [\n    { \"slot\": 0, \"label\": \"air temperature now (typical hour, MY36)\", \"unit\": \"K\" },\n    { \"slot\": 1, \"label\": \"air temperature now (typical hour, MY36)\", \"unit\": \"C\" },\n    { \"slot\": 2, \"label\": \"red flag (below -70 C)\", \"unit\": \"flag\" },\n    { \"slot\": 3, \"label\": \"hours starting below -70 C this sol\", \"unit\": \"h\" },\n    { \"slot\": 4, \"label\": \"typical nightly minimum (MY36 record)\", \"unit\": \"K\" }\n  ],\n  \"signals\": {\n    \"emits\": [\n      { \"code\": 100, \"label\": \"hour pulse (local hour)\", \"unit\": \"h\" },\n      { \"code\": 101, \"label\": \"cold flag up (1 while below -70 C)\", \"unit\": \"flag\" }\n    ]\n  },\n  \"shapes\": 3,\n  \"fact_ids\": [\n    \"jezero.temperature.my36_air_hourly_mean\",\n    \"jezero.temperature.my36_air_diurnal_min\"\n  ],\n  \"did_you_know\": {\n    \"text\": \"On a typical night at Jezero the air 1.45 m above the ground drops to about 193 K, which is -80 C. A -70 C flag should go up most nights, not just on rare cold snaps.\",\n    \"fact_id\": \"jezero.temperature.my36_air_diurnal_min\"\n  }\n}"
+     }
+    ]
+   },
+   "at": "2026-11-11T20:08:42.374Z",
+   "after_failure": false
+  }
+ ],
+ "questions": [],
+ "model": "claude-opus-5-5",
+ "system_sha256": "9c0a54d28e249d11e03e08fd054f03ab02a6138ad9f51a1ea6dd5cd000abb5a6",
+ "system_bytes": 81958,
+ "facts_in_prompt": 77,
+ "result": "module",
+ "name": "cold_flag_weather_station",
+ "tries": 1,
+ "report": "ok: 600 ticks, 3104 actuator calls, worst tick 1.707 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+ "manifest": {
+  "name": "cold-flag weather station",
+  "description": "A mast with a panel that logs the air temperature at the start of every local Mars hour and raises a red flag while it is colder than -70 C. It counts the cold hours each sol and broadcasts the flag for other players' builds.",
+  "version": 1,
+  "author": "design agent",
+  "state": [
+   {
+    "slot": 0,
+    "label": "air temperature now (typical hour, MY36)",
+    "unit": "K"
+   },
+   {
+    "slot": 1,
+    "label": "air temperature now (typical hour, MY36)",
+    "unit": "C"
+   },
+   {
+    "slot": 2,
+    "label": "red flag (below -70 C)",
+    "unit": "flag"
+   },
+   {
+    "slot": 3,
+    "label": "hours starting below -70 C this sol",
+    "unit": "h"
+   },
+   {
+    "slot": 4,
+    "label": "typical nightly minimum (MY36 record)",
+    "unit": "K"
+   }
+  ],
+  "signals": {
+   "emits": [
+    {
+     "code": 100,
+     "label": "hour pulse (local hour)",
+     "unit": "h"
+    },
+    {
+     "code": 101,
+     "label": "cold flag up (1 while below -70 C)",
+     "unit": "flag"
+    }
+   ]
+  },
+  "shapes": 3,
+  "fact_ids": [
+   "jezero.temperature.my36_air_hourly_mean",
+   "jezero.temperature.my36_air_diurnal_min"
+  ],
+  "did_you_know": {
+   "text": "On a typical night at Jezero the air 1.45 m above the ground drops to about 193 K, which is -80 C. A -70 C flag should go up most nights, not just on rare cold snaps.",
+   "fact_id": "jezero.temperature.my36_air_diurnal_min"
+  }
+ },
+ "source": "// Cold-flag weather station. It has a mast, a panel and a red cone flag that is spawned while it is cold.\n// The temperature comes from the live read ENV_AIR_TEMP_K, which is the typical temperature\n// for the current local hour over Mars Year 36 (fact jezero.temperature.my36_air_hourly_mean).\n// That is a typical-day curve, not today's weather.\n// The -70 C threshold is the player's choice, not a fact about Mars. 273.15 is the kelvin/celsius unit offset.\nimport { read, fact, fact_tier, spawn, pose, remove, state_set, signal_emit, log,\n         ENV_AIR_TEMP_K, ENV_LOCAL_HOUR, SHAPE_CYLINDER, SHAPE_PANEL, SHAPE_CONE,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_DIURNAL_MIN } from \"./host\";\n\nconst SLOT_T_K: i32 = 0;\nconst SLOT_T_C: i32 = 1;\nconst SLOT_FLAG: i32 = 2;\nconst SLOT_COLD_HOURS: i32 = 3;\nconst SLOT_TYPICAL_MIN_K: i32 = 4;\nconst SIGNAL_HOUR: i32 = 100;          // value: local hour 0..23\nconst SIGNAL_COLD: i32 = 101;          // value: 1, re-emitted every tick while the flag is up\nconst LOG_HOUR_TEMP: i32 = 1;          // value: air temperature at the start of the hour (K)\nconst LOG_FLAG: i32 = 2;               // value: 1 flag raised, 0 flag lowered\nconst LOG_TIER: i32 = 3;               // value: provenance tier of the hourly temperature record\nconst LOG_TYPICAL_MIN: i32 = 4;        // value: typical nightly minimum read from the fact index (K)\nconst KELVIN_OFFSET: f32 = 273.15;     // unit conversion, not a Mars number\nconst COLD_K: f32 = -70.0 + KELVIN_OFFSET; // player's threshold: -70 C\n\nlet mast: i32 = -1;\nlet panel: i32 = -1;\nlet flag: i32 = -1;\nlet flagUp: i32 = -1;                  // -1 = unknown yet, so the first tick sets it\nlet lastHour: i32 = -1;\nlet coldHours: i32 = 0;\nlet typicalMinK: f32 = 0.0;\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.1, 2.0, 0.1, 0.8, 0.8, 0.8);\n  panel = spawn(SHAPE_PANEL, 0.6, 0.4, 0.05, 0.1, 0.3, 0.9);\n  pose(mast, 0.0, 1.0, 0.0, 0.0, 0.0);\n  pose(panel, 0.0, 2.1, 0.0, 0.0, 0.3);\n  typicalMinK = fact(FACT_JEZERO_TEMPERATURE_MY36_AIR_DIURNAL_MIN);\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN));\n  if (typicalMinK == typicalMinK) log(LOG_TYPICAL_MIN, typicalMinK); // skip if NaN\n}\n\nexport function tick(dt: f32): void {\n  const temp = read(ENV_AIR_TEMP_K);\n  const hourNow = read(ENV_LOCAL_HOUR);\n  const hour = <i32>Math.floor(hourNow);\n\n  if (hour != lastHour) {\n    if (lastHour >= 0 && hour < lastHour) coldHours = 0;  // crossed midnight: new sol\n    lastHour = hour;\n    if (temp < COLD_K) coldHours += 1;\n    signal_emit(SIGNAL_HOUR, <f32>hour);\n    log(LOG_HOUR_TEMP, temp);                              // the hourly temperature log\n  }\n\n  const cold: i32 = temp < COLD_K ? 1 : 0;\n  if (cold != flagUp) {\n    flagUp = cold;\n    if (flag >= 0) { remove(flag); flag = -1; }\n    if (cold == 1) {\n      flag = spawn(SHAPE_CONE, 0.5, 0.6, 0.5, 1.0, 0.1, 0.1);\n      pose(flag, 0.0, 2.6, 0.0, 0.0, 0.0);\n    }\n    log(LOG_FLAG, <f32>cold);\n  }\n  if (cold == 1) signal_emit(SIGNAL_COLD, 1.0);\n\n  state_set(SLOT_T_K, temp);\n  state_set(SLOT_T_C, temp - KELVIN_OFFSET);\n  state_set(SLOT_FLAG, <f32>cold);\n  state_set(SLOT_COLD_HOURS, <f32>coldHours);\n  if (typicalMinK == typicalMinK) state_set(SLOT_TYPICAL_MIN_K, typicalMinK);\n}\n",
+ "explanation": "**What it does.** The station is a mast with a blue panel.\n\n- **Hourly log.** At the start of every local Mars hour it logs the air temperature (log code 1) and sends an hour pulse on signal 100.\n- **Red flag.** Whenever the air is colder than -70 C, a red cone goes up on top of the mast. While the flag is up, the station broadcasts signal 101 every tick, so other players can wire a heater, a light or an alarm to it.\n- **Inspector panel.** You will see:\n  - the temperature now, in kelvin and in Celsius\n  - whether the flag is up\n  - how many hours this sol started below -70 C\n  - the typical nightly minimum from the fact index, for comparison\n\n**Which facts shaped it.**\n- The temperature is the typical value for the current hour, averaged over a whole Mars year measured by Perseverance's weather instruments [jezero.temperature.my36_air_hourly_mean]. It is a typical-day curve, not live weather, and it has no seasons. The station logs that record's tier at start-up, so the inspector shows how solid it is.\n- A typical night at Jezero bottoms out around 193 K, which is -80 C [jezero.temperature.my36_air_diurnal_min]. That record's range is 188.7 to 196 K, and every value in it is below your -70 C line. Expect the flag to go up every night and come down after sunrise, so it reads more like a \"night is here\" signal than an alarm.\n\n**Your assumptions, not facts.**\n- The -70 C threshold is your choice.\n- \"Every hour\" means each local true solar hour on the world clock.\n- The mast, panel and flag sizes and colours are cosmetic.\n- 273.15 is just the conversion between kelvin and Celsius.\n\nIf you want a flag that marks unusual cold, try a lower threshold. The hourly averages are smoother than any single night, so real individual nights go colder than this curve shows.",
+ "fact_ids": [
+  "jezero.temperature.my36_air_hourly_mean",
+  "jezero.temperature.my36_air_diurnal_min"
+ ],
+ "log": [
+  {
+   "attempt": 1,
+   "ok": true,
+   "error": null,
+   "report": "ok: 600 ticks, 3104 actuator calls, worst tick 1.707 ms, 0 over the 2 ms budget (3 in a row, a mean over it, or one tick over the 400 ms watchdog would fail)",
+   "source": "// Cold-flag weather station. It has a mast, a panel and a red cone flag that is spawned while it is cold.\n// The temperature comes from the live read ENV_AIR_TEMP_K, which is the typical temperature\n// for the current local hour over Mars Year 36 (fact jezero.temperature.my36_air_hourly_mean).\n// That is a typical-day curve, not today's weather.\n// The -70 C threshold is the player's choice, not a fact about Mars. 273.15 is the kelvin/celsius unit offset.\nimport { read, fact, fact_tier, spawn, pose, remove, state_set, signal_emit, log,\n         ENV_AIR_TEMP_K, ENV_LOCAL_HOUR, SHAPE_CYLINDER, SHAPE_PANEL, SHAPE_CONE,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN,\n         FACT_JEZERO_TEMPERATURE_MY36_AIR_DIURNAL_MIN } from \"./host\";\n\nconst SLOT_T_K: i32 = 0;\nconst SLOT_T_C: i32 = 1;\nconst SLOT_FLAG: i32 = 2;\nconst SLOT_COLD_HOURS: i32 = 3;\nconst SLOT_TYPICAL_MIN_K: i32 = 4;\nconst SIGNAL_HOUR: i32 = 100;          // value: local hour 0..23\nconst SIGNAL_COLD: i32 = 101;          // value: 1, re-emitted every tick while the flag is up\nconst LOG_HOUR_TEMP: i32 = 1;          // value: air temperature at the start of the hour (K)\nconst LOG_FLAG: i32 = 2;               // value: 1 flag raised, 0 flag lowered\nconst LOG_TIER: i32 = 3;               // value: provenance tier of the hourly temperature record\nconst LOG_TYPICAL_MIN: i32 = 4;        // value: typical nightly minimum read from the fact index (K)\nconst KELVIN_OFFSET: f32 = 273.15;     // unit conversion, not a Mars number\nconst COLD_K: f32 = -70.0 + KELVIN_OFFSET; // player's threshold: -70 C\n\nlet mast: i32 = -1;\nlet panel: i32 = -1;\nlet flag: i32 = -1;\nlet flagUp: i32 = -1;                  // -1 = unknown yet, so the first tick sets it\nlet lastHour: i32 = -1;\nlet coldHours: i32 = 0;\nlet typicalMinK: f32 = 0.0;\n\nexport function init(): void {\n  mast = spawn(SHAPE_CYLINDER, 0.1, 2.0, 0.1, 0.8, 0.8, 0.8);\n  panel = spawn(SHAPE_PANEL, 0.6, 0.4, 0.05, 0.1, 0.3, 0.9);\n  pose(mast, 0.0, 1.0, 0.0, 0.0, 0.0);\n  pose(panel, 0.0, 2.1, 0.0, 0.0, 0.3);\n  typicalMinK = fact(FACT_JEZERO_TEMPERATURE_MY36_AIR_DIURNAL_MIN);\n  log(LOG_TIER, <f32>fact_tier(FACT_JEZERO_TEMPERATURE_MY36_AIR_HOURLY_MEAN));\n  if (typicalMinK == typicalMinK) log(LOG_TYPICAL_MIN, typicalMinK); // skip if NaN\n}\n\nexport function tick(dt: f32): void {\n  const temp = read(ENV_AIR_TEMP_K);\n  const hourNow = read(ENV_LOCAL_HOUR);\n  const hour = <i32>Math.floor(hourNow);\n\n  if (hour != lastHour) {\n    if (lastHour >= 0 && hour < lastHour) coldHours = 0;  // crossed midnight: new sol\n    lastHour = hour;\n    if (temp < COLD_K) coldHours += 1;\n    signal_emit(SIGNAL_HOUR, <f32>hour);\n    log(LOG_HOUR_TEMP, temp);                              // the hourly temperature log\n  }\n\n  const cold: i32 = temp < COLD_K ? 1 : 0;\n  if (cold != flagUp) {\n    flagUp = cold;\n    if (flag >= 0) { remove(flag); flag = -1; }\n    if (cold == 1) {\n      flag = spawn(SHAPE_CONE, 0.5, 0.6, 0.5, 1.0, 0.1, 0.1);\n      pose(flag, 0.0, 2.6, 0.0, 0.0, 0.0);\n    }\n    log(LOG_FLAG, <f32>cold);\n  }\n  if (cold == 1) signal_emit(SIGNAL_COLD, 1.0);\n\n  state_set(SLOT_T_K, temp);\n  state_set(SLOT_T_C, temp - KELVIN_OFFSET);\n  state_set(SLOT_FLAG, <f32>cold);\n  state_set(SLOT_COLD_HOURS, <f32>coldHours);\n  if (typicalMinK == typicalMinK) state_set(SLOT_TYPICAL_MIN_K, typicalMinK);\n}\n",
+   "manifestText": "{\n  \"name\": \"cold-flag weather station\",\n  \"description\": \"A mast with a panel that logs the air temperature at the start of every local Mars hour and raises a red flag while it is colder than -70 C. It counts the cold hours each sol and broadcasts the flag for other players' builds.\",\n  \"version\": 1,\n  \"author\": \"design agent\",\n  \"state\": [\n    { \"slot\": 0, \"label\": \"air temperature now (typical hour, MY36)\", \"unit\": \"K\" },\n    { \"slot\": 1, \"label\": \"air temperature now (typical hour, MY36)\", \"unit\": \"C\" },\n    { \"slot\": 2, \"label\": \"red flag (below -70 C)\", \"unit\": \"flag\" },\n    { \"slot\": 3, \"label\": \"hours starting below -70 C this sol\", \"unit\": \"h\" },\n    { \"slot\": 4, \"label\": \"typical nightly minimum (MY36 record)\", \"unit\": \"K\" }\n  ],\n  \"signals\": {\n    \"emits\": [\n      { \"code\": 100, \"label\": \"hour pulse (local hour)\", \"unit\": \"h\" },\n      { \"code\": 101, \"label\": \"cold flag up (1 while below -70 C)\", \"unit\": \"flag\" }\n    ]\n  },\n  \"shapes\": 3,\n  \"fact_ids\": [\n    \"jezero.temperature.my36_air_hourly_mean\",\n    \"jezero.temperature.my36_air_diurnal_min\"\n  ],\n  \"did_you_know\": {\n    \"text\": \"On a typical night at Jezero the air 1.45 m above the ground drops to about 193 K, which is -80 C. A -70 C flag should go up most nights, not just on rare cold snaps.\",\n    \"fact_id\": \"jezero.temperature.my36_air_diurnal_min\"\n  }\n}"
+  }
+ ],
+ "wasm_sha256": "d0db23af517aeb189d93acd2e5b4a6e68392fb419cd0321ff01082b4754b1d6a",
+ "wasm_base64": "AGFzbQEAAAABLwhgAn99AGABfwF9YAd/fX19fX19AX9gBn99fX19fQBgAX0AYAAAYAF/AGABfwF/AoABCQRob3N0CXN0YXRlX3NldAAABGhvc3QDbG9nAAAEaG9zdAVzcGF3bgACBGhvc3QEcG9zZQADBGhvc3QLc2lnbmFsX2VtaXQAAARob3N0BHJlYWQAAQRob3N0BnJlbW92ZQAGBGhvc3QJZmFjdF90aWVyAAcEaG9zdARmYWN0AAEDAwIEBQUFAQEAgAIGJwd/AUF/C38BQX8LfwFBfwt/AUF/C38BQX8LfwFBAAt9AUMAAAAACwcYAwRpbml0AAoEdGljawAJBm1lbW9yeQIACqUDAv4BAQF/QQ4QBSEAQQ8QBbuc/AIiASMERwRAIAEjBEgjBEEATnEEQEEAJAULIAEkBCAAQ2YmS0NdBEAjBUEBaiQFC0HkACABshAEQQEgABABCyAAQ2YmS0NdIgEjA0cEQCABJAMjAkEATgRAIwIQBkF/JAILIAEEQEEDQwAAAD9DmpkZP0MAAAA/QwAAgD9DzczMPUPNzMw9EAIkAiMCQwAAAABDZmYmQEMAAAAAQwAAAABDAAAAABADC0ECIAGyEAELIAEEQEHlAEMAAIA/EAQLQQAgABAAQQEgAEMzk4jDkhAAQQIgAbIQAEEDIwWyEAAjBiMGWwRAQQQjBhAACwuiAQBBAUPNzMw9QwAAAEBDzczMPUPNzEw/Q83MTD9DzcxMPxACJABBBEOamRk/Q83MzD5DzcxMPUPNzMw9Q5qZmT5DZmZmPxACJAEjAEMAAAAAQwAAgD9DAAAAAEMAAAAAQwAAAAAQAyMBQwAAAABDZmYGQEMAAAAAQwAAAABDmpmZPhADQTEQCCQGQQNB1AAQB7IQASMGIwZbBEBBBCMGEAELCw==",
+ "finished": "2026-11-11T20:08:42.375Z",
+ "question_asked_before_build": false,
+ "question_fact_grounded": false,
+ "numbers_without_facts": {
+  "explanation": [
+   "-70 C",
+   "-70 C",
+   "193 K",
+   "196 K",
+   "-70 C",
+   "-70 C"
+  ],
+  "manifest.description": [
+   "-70 C"
+  ],
+  "manifest.state[2].label": [
+   "-70 C"
+  ],
+  "manifest.state[3].label": [
+   "-70 C"
+  ],
+  "source comments": [
+   "-70 C",
+   "-70 C"
+  ]
+ }
+}
