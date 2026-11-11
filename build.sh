@@ -10,7 +10,7 @@ for f in "${files[@]}"; do
   name=$(basename "$f" .ts)
   [ "$name" = "host" ] && continue
   npx asc "$f" -o "build/$name.wasm" -t "build/$name.wat" \
-    --runtime stub -O3 --noAssert --disable bulk-memory \
+    --runtime stub -O3 --noAssert --disable bulk-memory --maximumMemory 256 \
     --use abort= 2>&1
   echo "built build/$name.wasm ($(wc -c < "build/$name.wasm" | tr -d " ") bytes)"
 done

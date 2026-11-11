@@ -1,0 +1,36 @@
+{
+  "name": "weather station",
+  "description": "A mast with a panel that counts sols, pulses a signal every Mars hour, and shows the reference air temperature at Jezero from the fact base.",
+  "version": 1,
+  "author": "sample",
+  "state": [
+    {
+      "slot": 0,
+      "label": "sols elapsed",
+      "unit": "sol"
+    },
+    {
+      "slot": 1,
+      "label": "reference air temperature (MY36 annual mean)",
+      "unit": "K"
+    }
+  ],
+  "signals": {
+    "emits": [
+      {
+        "code": 100,
+        "label": "hour pulse",
+        "unit": "h"
+      }
+    ]
+  },
+  "shapes": 2,
+  "fact_ids": [
+    "jezero.temperature.my36_air_annual_mean",
+    "mars.time.sol"
+  ],
+  "did_you_know": {
+    "text": "The mean air temperature at Jezero over Mars Year 36 was 218.6 K, about -55 C, measured by Perseverance's MEDA at 1.45 m.",
+    "fact_id": "jezero.temperature.my36_air_annual_mean"
+  }
+}

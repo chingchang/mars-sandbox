@@ -10,7 +10,7 @@
  (import "host" "log" (func $behaviors/host/log (param i32 f32)))
  (import "host" "drive" (func $behaviors/host/drive (param f32 f32)))
  (global $behaviors/runaway/t0 (mut f32) (f32.const -1))
- (memory $0 0)
+ (memory $0 0 256)
  (export "init" (func $behaviors/runaway/init))
  (export "tick" (func $behaviors/runaway/tick))
  (export "memory" (memory $0))

@@ -11,7 +11,7 @@
  (import "host" "drive" (func $behaviors/host/drive (param f32 f32)))
  (import "host" "set_led" (func $behaviors/host/set_led (param f32 f32 f32)))
  (global $behaviors/seek_target/arrived (mut i32) (i32.const 0))
- (memory $0 0)
+ (memory $0 0 256)
  (export "init" (func $behaviors/seek_target/init))
  (export "tick" (func $behaviors/seek_target/tick))
  (export "memory" (memory $0))

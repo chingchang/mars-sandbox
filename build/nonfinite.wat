@@ -13,7 +13,7 @@
  (import "host" "drive" (func $behaviors/host/drive (param f32 f32)))
  (global $behaviors/nonfinite/nan (mut f32) (f32.const 0))
  (global $behaviors/nonfinite/inf (mut f32) (f32.const 1))
- (memory $0 0)
+ (memory $0 0 256)
  (export "init" (func $behaviors/nonfinite/init))
  (export "tick" (func $behaviors/nonfinite/tick))
  (export "memory" (memory $0))
