@@ -177,7 +177,7 @@ test("HTTP: POST /workshop answers with questions or a module; bad requests are 
 });
 
 test("check:secrets: finds key shapes built at run time, passes on this repo, flags a tracked .env", () => {
-  const fake = ["sk-ant-" + "a".repeat(40), "AKIA" + "Q".repeat(16), "ghp_" + "z".repeat(36), "ANTHROPIC_API_KEY=" + "k".repeat(24), "-----BEGIN RSA PRIVATE KEY-----"];
+  const fake = ["sk-ant-" + "a".repeat(40), "AKIA" + "Q".repeat(16), "ghp_" + "z".repeat(36), "ANTHROPIC_API_KEY=" + "k".repeat(24), ["-----BEGIN", "RSA PRIVATE", "KEY-----"].join(" ")];   // every fixture is built at run time so the scanner does not flag this file
   const hits = scanText(["const a = 1;", ...fake, "ANTHROPIC_API_KEY=", "WORKSHOP_MODEL="].join("\n"));
   assert.equal(hits.length, fake.length, JSON.stringify(hits));
   assert.deepEqual(hits.map(h => h.line), [2, 3, 4, 5, 6]);
