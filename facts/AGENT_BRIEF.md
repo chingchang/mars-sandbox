@@ -36,6 +36,12 @@ relay. Stop for review at each PR.
 | T1 terrain (MOLA + HiRISE) | merged |
 | F2 MEDA MY36 + tau from literature | merged (PRs 3 and 4) |
 | F3 MCD climatology | merged (PR 5); full-database access and the 6.2 release date pending with LMD |
+| R1 multi-module runtime | merged (PR 7) |
+| X1 generic host API + manifest | merged (PRs 9, 11) |
+| W1 workshop server | merged (PR 12) |
+| W2 workshop panel | merged (PR 14) |
+| A1 acceptance | merged (PRs 16, 17): 4 of 5 pass on the frozen prompt; prompt 3 fails on the page's rotation order (`docs/HOST_API.md` does not state it; a follow-up the owner decides) |
+| S1 deploy to a production site | in review |
 
 ## Phase C: the MVP (do these next, in order)
 
@@ -121,6 +127,22 @@ grounded in a fact id before building. Record the transcripts under
 5. A dust gauge that estimates how dirty the panels are from the dust optical depth.
 Tune the system prompt until at least four of five pass; report which failed and
 why. Do not special-case any prompt in code.
+
+### S1. Deploy to a production site (requested by the owner on 2026-11-11, issue 18)
+A URL the owner can open from any device: the packed page and the workshop
+server in one container that stops when idle (Fly.io, `Dockerfile`,
+`fly.toml`, the day's model-call count on a small volume), the key only in
+the host's environment, an access code the player types once, a
+throttle on wrong codes, a daily cap on model calls (default 50), Host and
+Origin pinned to the deployed site, `/health` saying only ok to strangers, a
+Content-Security-Policy on the page that keeps player modules sandboxed, and a
+deploy from `main` only after the test job is green. A serverless function was
+assessed and does not fit (a request can run for minutes with child processes
+and one build queue); the reasons and the measured numbers are in
+`docs/DEV_GUIDE.md` §11. The sandbox limits, the manifest schema, `facts/` and
+`CLAUDE.md` are untouched. The owner creates the hosting account, sets
+`ANTHROPIC_API_KEY`, `WORKSHOP_ACCESS_CODE` and `WORKSHOP_DAILY_CAP` there, and
+adds `FLY_API_TOKEN` to the repository secrets.
 
 ## Phase D: realism (after the MVP demo, not before)
 

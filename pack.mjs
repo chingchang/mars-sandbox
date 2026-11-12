@@ -28,6 +28,8 @@ const host = readFileSync("behaviors/host.ts", "utf8").replace(/<\/script/gi, "<
 let html = readFileSync("web/app.html", "utf8");
 html = html.replace("/*__BEHAVIORS__*/", JSON.stringify(behaviors).replace(/<\/script/gi, "<\\/script"));
 html = html.replace("/*__HOST__*/", host);
+// where the page finds the workshop server: WORKSHOP_URL at pack time (a separate host), else the page decides at run time (see resolveWorkshopUrl)
+html = html.replace("__WORKSHOP_URL__", (process.env.WORKSHOP_URL ?? "").trim().replace(/"/g, ""));
 mkdirSync("dist", { recursive: true });
 writeFileSync("dist/index.html", html);
 // terrain heightmaps and the 16-bit PNG decoder are fetched at runtime, not embedded

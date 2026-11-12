@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Mars Sandbox: hot-loaded Wasm behaviors</title>
+<meta name="workshop-url" content="__WORKSHOP_URL__">
 <style>
   :root { --bg:#120a07; --panel:rgba(18,10,7,.86); --ink:#f3e6dc; --dim:#b89b8a; --accent:#ff9f5a; --ok:#6fe3a0; --bad:#ff6b6b; --warn:#ffd166; }
   * { box-sizing:border-box; }
@@ -149,7 +150,7 @@ import { decodePng16, makeSampler } from "./png16.mjs";
 import { Registry, browserSpawner, BUDGET_MS, TICK_HZ, KIND } from "./runtime/registry.mjs";
 import { buildFactTable } from "./runtime/facts.mjs";
 import { DAY_SECONDS, SUN_PHASE, localHour as clockHour, airTempFromRecord } from "./runtime/clock.mjs";
-import { createWorkshopPanel, inspectorHtml, updateInspector, DEFAULT_WORKSHOP_URL } from "./workshop.mjs";
+import { createWorkshopPanel, inspectorHtml, updateInspector, resolveWorkshopUrl } from "./workshop.mjs";
 const TERRAINS = {
   hirise: { file: "terrain/jezero_hirise_5km", seg: 500 },
   mola:   { file: "terrain/jezero_mola_40km",  seg: 86 },
@@ -449,7 +450,8 @@ window.sandbox = {
 // The module the workshop returns goes through the same registry path as "Load my own .wasm":
 // the manifest is validated on the page and again by the registry; the bytes get the same
 // policy, allow-list, budget and watchdog as any other module. The page trusts the server no more.
-const workshopUrl = new URLSearchParams(location.search).get("workshop") || DEFAULT_WORKSHOP_URL;
+// ?workshop= wins, then the URL packed into the page (WORKSHOP_URL at pack time), then the local server for a local page and the page's own origin elsewhere
+const workshopUrl = resolveWorkshopUrl({ search: location.search, packed: document.querySelector('meta[name="workshop-url"]')?.content, origin: location.origin, hostname: location.hostname });
 let placedCount = 0;
 const explanations = new Map();      // object id -> the explanation its design came with (page side; the manifest stays as the server sent it)
 function placeSpot() {
