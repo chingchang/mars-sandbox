@@ -24,6 +24,7 @@ primary_region = "iad"
   WORKSHOP_ORIGINS = "https://mars-sandbox.fly.dev"
   WORKSHOP_KEEPALIVE_S = "20"
   WORKSHOP_TRUST_PROXY = "1"
+  WORKSHOP_STRICT = "1"
 
 [http_service]
   internal_port = 8787

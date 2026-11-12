@@ -12,9 +12,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createWorkshopServer, configFromEnv } from "../workshop/server.mts";
+import { createWorkshopServer, configFromEnv, clientKey, hostAllowed, originAllowed } from "../workshop/server.mts";
 import { bearer, codeMatches, DailyCap, Throttle, ClosedError } from "../workshop/guard.mts";
-import { cspFor, importMapOrigins, staticHandler } from "../workshop/static.mts";
+import { cspFor, importMapSources, staticHandler } from "../workshop/static.mts";
 import { LlmError } from "../workshop/llm.mts";
 import { readIndex, readKeys } from "../workshop/prompt.mts";
 
@@ -105,17 +105,60 @@ test("access code: no code and a wrong one are refused before the body is parsed
   } finally { server.close(); }
 });
 
-test("access code behind a proxy: wrong attempts count against X-Forwarded-For only when the deployment trusts it", async () => {
+test("the throttle's key: Fly-Client-IP when the proxy is trusted, never X-Forwarded-For, so a rotating or forged forwarded header neither evades the throttle nor locks another address out", async () => {
+  const fake = (headers, remote = "9.9.9.9") => ({ headers, socket: { remoteAddress: remote } });
+  assert.equal(clientKey(fake({ "x-forwarded-for": "1.1.1.1, 2.2.2.2" }), true), "9.9.9.9", "X-Forwarded-For is never the key");
+  assert.equal(clientKey(fake({ "fly-client-ip": "5.5.5.5", "x-forwarded-for": "1.1.1.1" }), true), "5.5.5.5");
+  assert.equal(clientKey(fake({ "fly-client-ip": "5.5.5.5" }), false), "9.9.9.9", "not trusted: the socket");
+  assert.equal(clientKey(fake({ "fly-client-ip": ["5.5.5.5", "6.6.6.6"] }), true), "5.5.5.5");
   const { llm } = counting();
-  const mk = async trustProxy => { const s = createWorkshopServer({ llm, index, keys, build: fakeBuild, accessCode: CODE, throttle: new Throttle(2, 60_000), trustProxy }); return [s, await listen(s)]; };
-  const [trusting, p1] = await mk(true), [plain, p2] = await mk(false);
+  const server = createWorkshopServer({ llm, index, keys, build: fakeBuild, accessCode: CODE, throttle: new Throttle(3, 60_000), trustProxy: true });
+  const port = await listen(server);
   try {
-    for (const ip of ["1.1.1.1", "2.2.2.2"]) { await raw(p1, "POST", "/workshop", { ...withCode("x"), "x-forwarded-for": `${ip}, 10.0.0.1` }, BODY); await raw(p1, "POST", "/workshop", { ...withCode("x"), "x-forwarded-for": ip }, BODY); }
-    let r = await raw(p1, "POST", "/workshop", { ...withCode(), "x-forwarded-for": "1.1.1.1" }, BODY); assert.equal(r.status, 429, "1.1.1.1 is throttled");
-    r = await raw(p1, "POST", "/workshop", { ...withCode(), "x-forwarded-for": "3.3.3.3" }, BODY); assert.equal(r.status, 200, "another forwarded address is not");
-    await raw(p2, "POST", "/workshop", { ...withCode("x"), "x-forwarded-for": "1.1.1.1" }, BODY); await raw(p2, "POST", "/workshop", { ...withCode("x"), "x-forwarded-for": "2.2.2.2" }, BODY);
-    r = await raw(p2, "POST", "/workshop", { ...withCode(), "x-forwarded-for": "3.3.3.3" }, BODY); assert.equal(r.status, 429, "without trust the header is ignored and the socket address (one client) is throttled");
-  } finally { trusting.close(); plain.close(); }
+    // 20 wrong codes, each with a different client-chosen X-Forwarded-For: still one address (the socket, no Fly header), so the throttle holds
+    const statuses = [];
+    for (let i = 0; i < 20; i++) statuses.push((await raw(port, "POST", "/workshop", { ...withCode("x"), "x-forwarded-for": `${i}.${i}.${i}.${i}, 10.0.0.1` }, BODY)).status);
+    assert.deepEqual(statuses.slice(0, 3), [401, 401, 401]); assert.ok(statuses.slice(3).every(s => s === 429), "rotating the forwarded header does not evade the throttle");
+    // another client, as the proxy would present it, is not locked out by that
+    let r = await raw(port, "POST", "/workshop", { ...withCode(), "fly-client-ip": "8.8.8.8" }, BODY); assert.equal(r.status, 200);
+    // a forged X-Forwarded-For naming a player's address cannot block that player
+    for (let i = 0; i < 5; i++) await raw(port, "POST", "/workshop", { ...withCode("x"), "fly-client-ip": "7.7.7.7", "x-forwarded-for": "8.8.8.8" }, BODY);
+    r = await raw(port, "POST", "/workshop", { ...withCode(), "fly-client-ip": "8.8.8.8" }, BODY); assert.equal(r.status, 200, "8.8.8.8 is still served");
+    r = await raw(port, "POST", "/workshop", { ...withCode(), "fly-client-ip": "7.7.7.7" }, BODY); assert.equal(r.status, 429, "7.7.7.7, the real sender, is throttled");
+  } finally { server.close(); }
+});
+
+test("/health is no oracle for the code: a presented code goes through the throttle, wrong ones are recorded, and a blocked address gets the bare answer on both paths", async () => {
+  const { calls, llm } = counting();
+  let t = Date.UTC(2026, 10, 12, 12);
+  const server = createWorkshopServer({ llm, index, keys, build: fakeBuild, accessCode: CODE, throttle: new Throttle(5, 600_000), now: () => t });
+  const port = await listen(server);
+  try {
+    for (let i = 0; i < 5; i++) { const r = await raw(port, "GET", "/health", { authorization: `Bearer guess-${i}` }); assert.deepEqual(r.json, { ok: true }); }
+    let r = await raw(port, "GET", "/health", { authorization: `Bearer ${CODE}` }); assert.deepEqual(r.json, { ok: true }, "five wrong guesses on /health: even the right code gets the bare answer");
+    r = await raw(port, "POST", "/workshop", withCode(), BODY); assert.equal(r.status, 429, "and /workshop is blocked for the same address"); assert.equal(calls.length, 0);
+    r = await raw(port, "GET", "/health"); assert.deepEqual(r.json, { ok: true }, "no code: bare, and not counted");
+    t += 601_000;
+    r = await raw(port, "GET", "/health", { authorization: `Bearer ${CODE}` }); assert.ok(r.json.system_sha256, "after the window the right code opens the details");
+    for (let i = 0; i < 5; i++) await raw(port, "POST", "/workshop", withCode("x"), BODY);
+    r = await raw(port, "GET", "/health", { authorization: `Bearer ${CODE}` }); assert.deepEqual(r.json, { ok: true }, "wrong codes on /workshop block /health details too");
+  } finally { server.close(); }
+});
+
+test("strict mode: only the listed host and origin are served, local pages included, and the 403 says nothing more", async () => {
+  assert.equal(hostAllowed("localhost:8787", [], true), false); assert.equal(hostAllowed("a.example", ["a.example"], true), true); assert.equal(hostAllowed("localhost:8787", ["a.example"]), true);
+  assert.equal(originAllowed("http://localhost:8000", [], true), false); assert.equal(originAllowed("https://a.example", ["https://a.example"], true), true);
+  assert.throws(() => configFromEnv({ WORKSHOP_STRICT: "1" }), /needs WORKSHOP_HOSTS and WORKSHOP_ORIGINS/);
+  assert.equal(configFromEnv({ WORKSHOP_STRICT: "1", WORKSHOP_HOSTS: "a.example", WORKSHOP_ORIGINS: "https://a.example" }).strict, true);
+  const { llm } = counting();
+  const server = createWorkshopServer({ llm, index, keys, build: fakeBuild, accessCode: CODE, strict: true, hosts: ["sandbox.example"], origins: ["https://sandbox.example"] });
+  const port = await listen(server);
+  try {
+    let r = await raw(port, "POST", "/workshop", withCode(), BODY); assert.equal(r.status, 403, "Host 127.0.0.1 is not served in strict mode"); assert.deepEqual(r.json, { error: "not served" });
+    r = await raw(port, "POST", "/workshop", { ...withCode(), host: "sandbox.example", origin: "http://localhost:8000" }, BODY); assert.equal(r.status, 403); assert.deepEqual(r.json, { error: "not served" });
+    r = await raw(port, "POST", "/workshop", { ...withCode(), host: "sandbox.example", origin: "https://sandbox.example" }, BODY); assert.equal(r.status, 200);
+    r = await raw(port, "GET", "/health", { host: "localhost" }); assert.equal(r.status, 403);
+  } finally { server.close(); }
 });
 
 test("daily cap: the day's model calls close the workshop before the body is read, retries inside a request count, and the next UTC day reopens it", async () => {
@@ -170,9 +213,10 @@ test("with the code present a non-listed Origin or Host is still refused, and /h
 
 test("static client: served with a Content-Security-Policy (inline blocks by hash, the import map's CDN, wasm in workers, the workshop in connect-src), nosniff, and nothing above the directory", async () => {
   const html = `<!DOCTYPE html><html><head><style>body{margin:0}</style><script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"}}</script></head><body><script id="data" type="application/json">{"a":1}</script><script type="module">import "three"; new Worker("./runtime/worker.mjs", { type: "module" });</script></body></html>`;
-  assert.deepEqual(importMapOrigins(html), ["https://cdn.jsdelivr.net"]);
+  assert.deepEqual(importMapSources(html), ["https://cdn.jsdelivr.net/npm/three@0.170.0/build/"], "the directory the import map names, not the whole CDN");
   const csp = cspFor(html, { connect: ["https://api.example"] });
-  assert.match(csp, /^default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https:\/\/cdn\.jsdelivr\.net 'sha256-[A-Za-z0-9+/=]+' 'sha256-[A-Za-z0-9+/=]+' 'sha256-[A-Za-z0-9+/=]+'; worker-src 'self'; connect-src 'self' https:\/\/api\.example; style-src 'self' 'sha256-[A-Za-z0-9+/=]+'; img-src 'self' data: blob:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'$/);
+  assert.match(csp, /^default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https:\/\/cdn\.jsdelivr\.net\/npm\/three@0\.170\.0\/build\/ 'sha256-[A-Za-z0-9+/=]+' 'sha256-[A-Za-z0-9+/=]+' 'sha256-[A-Za-z0-9+/=]+'; worker-src 'self'; connect-src 'self' https:\/\/api\.example; style-src 'self' 'sha256-[A-Za-z0-9+/=]+'; img-src 'self' data: blob:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'$/);
+  assert.ok(!csp.includes("https://cdn.jsdelivr.net "), "no bare CDN origin anywhere in the policy");
   assert.ok(!csp.includes("'unsafe-inline'") && !csp.includes("'unsafe-eval'") && !csp.includes("'unsafe-hashes'"), "no unsafe-* allowance ('wasm-unsafe-eval' is the one for modules in workers)");
   const dir = mkdtempSync(path.join(tmpdir(), "mars-static-"));
   try {
@@ -183,7 +227,7 @@ test("static client: served with a Content-Security-Policy (inline blocks by has
     const server = createWorkshopServer({ llm, index, keys, build: fakeBuild, staticDir: dir, staticConnect: ["https://api.example"] });
     const port = await listen(server);
     try {
-      let r = await raw(port, "GET", "/"); assert.equal(r.status, 200); assert.match(r.headers["content-type"], /^text\/html/); assert.equal(r.headers["content-security-policy"], csp); assert.equal(r.headers["x-content-type-options"], "nosniff"); assert.equal(r.headers["referrer-policy"], "no-referrer"); assert.equal(r.headers["cache-control"], "no-cache"); assert.equal(r.text, html);
+      let r = await raw(port, "GET", "/"); assert.equal(r.status, 200); assert.match(r.headers["content-type"], /^text\/html/); assert.equal(r.headers["content-security-policy"], csp); assert.equal(r.headers["x-content-type-options"], "nosniff"); assert.equal(r.headers["referrer-policy"], "no-referrer"); assert.equal(r.headers["strict-transport-security"], "max-age=31536000"); assert.equal(r.headers["cache-control"], "no-cache"); assert.equal(r.text, html);
       r = await raw(port, "GET", "/index.html"); assert.equal(r.status, 200);
       r = await raw(port, "GET", "/worker.mjs"); assert.equal(r.status, 200); assert.match(r.headers["content-type"], /^text\/javascript/); assert.equal(r.headers["content-security-policy"], csp, "a worker script carries the policy"); assert.equal(r.headers["cache-control"], "public, max-age=3600");
       r = await raw(port, "HEAD", "/worker.mjs"); assert.equal(r.status, 200); assert.equal(r.text, ""); assert.equal(r.headers["content-length"], "10");
@@ -197,7 +241,7 @@ test("static client: served with a Content-Security-Policy (inline blocks by has
   if (existsSync(path.join(ROOT, "dist/index.html"))) {                       // the real packed page: every inline block hashed, the one CDN, nothing inline unaccounted for
     const page = readFileSync(path.join(ROOT, "dist/index.html"), "utf8");
     const real = cspFor(page);
-    assert.deepEqual(importMapOrigins(page), ["https://cdn.jsdelivr.net"]);
+    assert.deepEqual(importMapSources(page).sort(), ["https://cdn.jsdelivr.net/npm/three@0.170.0/build/", "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"]);
     assert.equal((real.match(/'sha256-/g) ?? []).length, (page.match(/<script(?![^>]*\bsrc=)/gi) ?? []).length + (page.match(/<style/gi) ?? []).length);
     assert.ok(!/ on[a-z]+="/i.test(page), "no inline event handlers in the page (they would need 'unsafe-hashes')");
   }

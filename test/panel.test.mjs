@@ -123,7 +123,9 @@ test("helpers: weakest tier, citations, cited ids, next steps, counts and answer
 });
 
 test("resolveWorkshopUrl: the page's query, then the URL packed into the page, then the local server for a local page, then the page's own origin; the packed page carries the tag", async () => {
-  assert.equal(resolveWorkshopUrl({ search: "?workshop=http://127.0.0.1:1&x=1", packed: "https://p.example", origin: "https://site.example", hostname: "site.example" }), "http://127.0.0.1:1");
+  assert.equal(resolveWorkshopUrl({ search: "?workshop=http://127.0.0.1:1&x=1", packed: "", origin: "http://localhost:8000", hostname: "localhost" }), "http://127.0.0.1:1", "a local page honours ?workshop=");
+  assert.equal(resolveWorkshopUrl({ search: "?workshop=https://elsewhere.example", packed: "", origin: "https://site.example", hostname: "site.example" }), "https://site.example", "a deployed page ignores it: a link cannot point the code at another server");
+  assert.equal(resolveWorkshopUrl({ search: "?workshop=https://elsewhere.example", packed: "https://p.example", origin: "https://site.example", hostname: "site.example" }), "https://p.example");
   assert.equal(resolveWorkshopUrl({ search: "?x=1", packed: " https://p.example ", origin: "https://site.example", hostname: "site.example" }), "https://p.example");
   assert.equal(resolveWorkshopUrl({ search: "", packed: "__WORKSHOP_URL__", origin: "http://localhost:8000", hostname: "localhost" }), DEFAULT_WORKSHOP_URL, "an unreplaced placeholder is ignored");
   assert.equal(resolveWorkshopUrl({ search: "", packed: "", origin: "http://127.0.0.1:8000", hostname: "127.0.0.1" }), DEFAULT_WORKSHOP_URL, "a local page: the local server, as before");

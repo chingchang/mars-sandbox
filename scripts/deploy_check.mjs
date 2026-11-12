@@ -15,6 +15,8 @@ const csp = page.headers.get("content-security-policy") ?? "";
 check(/script-src 'self'/.test(csp) && /worker-src 'self'/.test(csp) && /connect-src 'self'/.test(csp), "the page carries a Content-Security-Policy with script-src, worker-src and connect-src 'self'");
 check(!/'unsafe-inline'/.test(csp.split("style-src")[0]), "no 'unsafe-inline' for scripts");
 check(page.headers.get("x-content-type-options") === "nosniff", "X-Content-Type-Options: nosniff");
+check(/max-age=\d+/.test(page.headers.get("strict-transport-security") ?? ""), "Strict-Transport-Security");
+check(!/cdn\.jsdelivr\.net(?:\s|;|$)/.test(csp), "the CDN allowance is a path, not the whole CDN");
 const html = await page.text();
 check(html.includes("ws-input") && html.includes('name="workshop-url"'), "the page is the packed client with the workshop panel");
 check(!/sk-ant-[A-Za-z0-9_-]{20,}/.test(html), "nothing key-shaped in the page");

@@ -354,15 +354,21 @@ into the page and the server adds it to the page's `connect-src`.
 Checked in this order, before the body is read or the model called:
 
 1. **Host and Origin** must be exactly the deployed host and origin
-   (`WORKSHOP_HOSTS`, `WORKSHOP_ORIGINS`); local pages are always allowed, as
-   before. Body limit 1 MB, JSON only.
-2. **Access code** (`WORKSHOP_ACCESS_CODE`): the page sends it as a bearer
-   token; the server compares sha256 digests in constant time. Without it:
-   401 and the page asks the player for the code once, keeping it on the
-   device (`localStorage`, per workshop URL), never in the conversation. Five
-   wrong codes from one address in ten minutes: 429 for the rest of the window
-   whatever the code. Behind Fly's proxy the address comes from
-   `X-Forwarded-For` (`WORKSHOP_TRUST_PROXY=1`).
+   (`WORKSHOP_HOSTS`, `WORKSHOP_ORIGINS`). Locally, local pages are allowed as
+   before; in production `WORKSHOP_STRICT=1` serves the listed ones only and
+   answers everything else with a plain "not served". Body limit 1 MB, JSON
+   only.
+2. **Access code** (`WORKSHOP_ACCESS_CODE`, 20 or more random ASCII
+   characters without spaces): the page sends it as a bearer token; the
+   server compares sha256 digests in constant time. Without it: 401 and the
+   page asks the player for the code once, keeping it on the device
+   (`localStorage`, per workshop URL), never in the conversation. Five wrong
+   codes from one address in ten minutes: 429 for the rest of the window
+   whatever the code, on `/workshop` and on `/health` alike (a code presented
+   to `/health` goes through the same throttle, so it is no faster an oracle).
+   Behind Fly's proxy the address is `Fly-Client-IP`, which the proxy sets and
+   a client cannot (`WORKSHOP_TRUST_PROXY=1`); `X-Forwarded-For` is never
+   used, because the proxy appends to whatever the client sent.
 3. **Daily cap** (`WORKSHOP_DAILY_CAP`, default 50 model calls per UTC day,
    retries inside one request included): past it the server answers 429
    `closed` and the page shows "the workshop is closed for today" with when it
@@ -381,12 +387,16 @@ loopback address, so a container cannot be started open by mistake.
 
 The page's headers (`workshop/static.mts`): a Content-Security-Policy that
 allows scripts only from the page's own origin, the two inline blocks by hash
-(the import map and the module script), three.js from the one CDN the import
-map names, and `'wasm-unsafe-eval'` so the sandbox worker can instantiate a
-module; `worker-src 'self'`; `connect-src 'self'` (plus `WORKSHOP_URL`);
-styles by hash; no inline event handlers; `X-Content-Type-Options: nosniff`;
-`Referrer-Policy: no-referrer`. Every file carries the policy, the worker
-script included. The sandbox guarantees (import allow-list, worker isolation,
+(the import map and the module script), three.js from the exact CDN
+directories the import map names (a path source, not the whole CDN, which
+serves every public package), and `'wasm-unsafe-eval'` so the sandbox worker
+can instantiate a module; `worker-src 'self'`; `connect-src 'self'` (plus
+`WORKSHOP_URL`); styles by hash; no inline event handlers;
+`X-Content-Type-Options: nosniff`; `Referrer-Policy: no-referrer`;
+`Strict-Transport-Security` for a year (honoured over TLS only). Every file
+carries the policy, the worker script included. On a deployed page the
+`?workshop=` parameter is ignored, so a link cannot point the panel, and the
+code a player types, at another server. The sandbox guarantees (import allow-list, worker isolation,
 budget, watchdog, memory and table policy) are unchanged.
 
 A proxy may close a response that stays silent for minutes, so in production
@@ -403,12 +413,13 @@ responses.
 | `ANTHROPIC_API_KEY` | secret | The model key. Read by the server only; never in the repo, the image, the page or a log. |
 | `WORKSHOP_ACCESS_CODE` | secret | The shared code players type once. Required before `WORKSHOP_BIND` can be anything but loopback. |
 | `WORKSHOP_DAILY_CAP` | secret or env | Model calls per UTC day (default 50). |
-| `WORKSHOP_STATE_DIR` | `fly.toml` | `/data`, the mounted volume the day's count is kept on. Must exist. |
+| `WORKSHOP_STATE_DIR` | `fly.toml` | `/data`, the mounted volume the day's count is kept on. Must exist. One process per directory: two live servers would each keep their own count in memory, so do not scale to two machines on one volume. |
 | `WORKSHOP_HOSTS` / `WORKSHOP_ORIGINS` | `fly.toml` | Exactly the deployed host and origin (`<app>.fly.dev`, `https://<app>.fly.dev`). |
 | `WORKSHOP_BIND` / `WORKSHOP_PORT` | `fly.toml` | `0.0.0.0` / `8787` in the container; `127.0.0.1` locally. |
 | `WORKSHOP_STATIC` | `fly.toml` | `dist`: serve the packed page from the same process. |
 | `WORKSHOP_KEEPALIVE_S` | `fly.toml` | `20` in production; unset locally. |
-| `WORKSHOP_TRUST_PROXY` | `fly.toml` | `1` behind Fly's proxy. |
+| `WORKSHOP_TRUST_PROXY` | `fly.toml` | `1` behind Fly's proxy: wrong codes are counted against `Fly-Client-IP`. |
+| `WORKSHOP_STRICT` | `fly.toml` | `1` in production: only the listed host and origin are served. |
 | `WORKSHOP_MODEL` | optional | The model (default `claude-opus-5-5`). |
 | `WORKSHOP_URL` | optional | Only when the page is hosted apart from the server. |
 | `FLY_API_TOKEN` | GitHub secret | Lets CI deploy. Nothing deploys until it exists. |
@@ -428,7 +439,8 @@ fly secrets set ANTHROPIC_API_KEY=... WORKSHOP_ACCESS_CODE=... WORKSHOP_DAILY_CA
 
 Deploying: every push to `main` runs the test job; the deploy job runs after
 it and only if it passed, and only when `FLY_API_TOKEN` is in the repository
-secrets. No branch deploys. By hand, `fly deploy` from the repo does the
+secrets (the token reaches the deploy step alone; the Fly action is pinned to
+a commit). No branch deploys. By hand, `fly deploy` from the repo does the
 same thing (it uses the same `Dockerfile`). Afterwards
 `node scripts/deploy_check.mjs https://<app>.fly.dev` checks, with no key and
 no code, that the page loads with its headers, `/health` says only ok, and

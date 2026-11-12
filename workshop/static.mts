@@ -18,13 +18,19 @@ export const MIME: Record<string, string> = {
 
 const sha256 = (s: string) => "'sha256-" + createHash("sha256").update(s).digest("base64") + "'";
 
-/** Origins of the absolute URLs an import map points at (the page loads three.js from one CDN). */
-export function importMapOrigins(html: string): string[] {
+/**
+ * The directories the import map points at (the page loads three.js from one CDN path), as
+ * CSP sources: a path that ends in "/" matches only below it, so `https://cdn.jsdelivr.net/npm/three@0.170.0/build/`
+ * allows that package's build and nothing else the CDN serves.
+ */
+export function importMapSources(html: string): string[] {
   const out = new Set<string>();
   for (const m of html.matchAll(/<script[^>]*type=["']importmap["'][^>]*>([\s\S]*?)<\/script>/gi)) {
     let map: { imports?: Record<string, string> } = {};
     try { map = JSON.parse(m[1]); } catch { continue; }
-    for (const v of Object.values(map.imports ?? {})) { try { const u = new URL(v); if (u.protocol === "https:") out.add(u.origin); } catch {} }
+    for (const v of Object.values(map.imports ?? {})) {
+      try { const u = new URL(v); if (u.protocol !== "https:") continue; out.add(u.origin + u.pathname.slice(0, u.pathname.lastIndexOf("/") + 1)); } catch {}
+    }
   }
   return [...out];
 }
@@ -32,14 +38,14 @@ export function importMapOrigins(html: string): string[] {
 /**
  * The policy for one packed page. Scripts: its own files, the inline blocks by hash (the
  * import map and the module script; the JSON and text blocks hash too, harmlessly), the
- * import map's CDN, and 'wasm-unsafe-eval' so the worker may instantiate a module. Workers
+ * import map's CDN directories, and 'wasm-unsafe-eval' so the worker may instantiate a module. Workers
  * and fetches: the page's own origin, plus `connect` (the workshop, when it is elsewhere).
  * Styles: the inline block by hash; CSSOM writes need no allowance. Nothing else.
  */
 export function cspFor(html: string, { connect = [] as string[] } = {}): string {
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map(m => sha256(m[1]));
   const styles = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map(m => sha256(m[1]));
-  const cdn = importMapOrigins(html);
+  const cdn = importMapSources(html);
   return [
     "default-src 'self'",
     `script-src 'self' 'wasm-unsafe-eval' ${[...cdn, ...scripts].join(" ")}`.trim(),
@@ -64,7 +70,8 @@ export function staticHandler(dir: string, { connect = [] }: StaticOptions = {})
   const indexFile = path.join(root, "index.html");
   if (!existsSync(indexFile)) throw new Error(`no index.html under ${root}: run node pack.mjs first`);
   const csp = cspFor(readFileSync(indexFile, "utf8"), { connect });
-  const common = { "content-security-policy": csp, "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" };
+  // HSTS is honoured by browsers only over TLS, so it is harmless on a local http server and useful behind force_https
+  const common = { "content-security-policy": csp, "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "strict-transport-security": "max-age=31536000" };
   return function serve(req: IncomingMessage, res: ServerResponse): boolean {
     if (req.method !== "GET" && req.method !== "HEAD") return false;
     let pathname: string;

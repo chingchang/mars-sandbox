@@ -10,17 +10,19 @@ export const MAX_RETRIES_WHEN_BUSY = 6;
 const LOCAL_PAGE = /^(?:localhost|127\.0\.0\.1|\[::1\])$/;
 
 /**
- * Where the page finds the workshop server, in order: ?workshop= in the page's URL, the URL
- * packed into the page (WORKSHOP_URL at pack time, for a server on another host), the local
- * server when the page itself is local (development, unchanged), else the page's own origin
- * (production: one process serves the page and the workshop).
+ * Where the page finds the workshop server, in order: ?workshop= in the page's URL, honoured
+ * only on a local page (on a deployed page a link could otherwise point the panel, and the
+ * access code a player types, at a stranger's server); the URL packed into the page
+ * (WORKSHOP_URL at pack time, for a server on another host); the local server when the page
+ * itself is local (development, unchanged); else the page's own origin (production: one
+ * process serves the page and the workshop).
  */
 export function resolveWorkshopUrl({ search = "", packed = "", origin = "", hostname = "" } = {}) {
+  const local = LOCAL_PAGE.test(hostname) || !origin || origin === "null";
   const param = new URLSearchParams(search).get("workshop");
-  if (param) return param;
+  if (param && local) return param;
   if (packed && packed.trim() && packed.trim() !== "__WORKSHOP_URL__") return packed.trim();
-  if (LOCAL_PAGE.test(hostname) || !origin || origin === "null") return DEFAULT_WORKSHOP_URL;
-  return origin;
+  return local ? DEFAULT_WORKSHOP_URL : origin;
 }
 
 /** The weakest provenance tier among fact ids, by the index's tier order (strongest first); null when none resolve. */

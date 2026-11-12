@@ -62,19 +62,27 @@ export const LOCAL_HOST = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
 /** Addresses the server may listen on without an access code. */
 export const LOOPBACK = /^(?:127\.0\.0\.1|localhost|::1|\[::1\])$/;
 
-export function originAllowed(origin: string, extra: string[] = []): boolean { return LOCAL_ORIGIN.test(origin) || extra.includes(origin); }
-export function hostAllowed(host: string, extra: string[] = []): boolean { return LOCAL_HOST.test(host) || extra.includes(host); }
+/** `strict` (production) drops the local allowance: only the listed origins and hosts are served. */
+export function originAllowed(origin: string, extra: string[] = [], strict = false): boolean { return (!strict && LOCAL_ORIGIN.test(origin)) || extra.includes(origin); }
+export function hostAllowed(host: string, extra: string[] = [], strict = false): boolean { return (!strict && LOCAL_HOST.test(host)) || extra.includes(host); }
 
 function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
   res.writeHead(status, { "content-type": "application/json", ...headers });
   res.end(JSON.stringify(body));
 }
 
-/** The address a wrong code is counted against: the proxy's client header when the deployment trusts it, else the socket. */
-function clientKey(req: IncomingMessage, trustProxy: boolean): string {
-  const xff = req.headers["x-forwarded-for"];
-  const first = (Array.isArray(xff) ? xff[0] : xff ?? "").split(",")[0].trim();
-  return (trustProxy && first) || req.socket.remoteAddress || "?";
+/**
+ * The address a wrong code is counted against. Behind Fly's proxy (`trustProxy`) it is
+ * `Fly-Client-IP`, which the proxy sets to the address it accepted the connection from and a
+ * client cannot supply (Fly's request-headers docs). Never `X-Forwarded-For`: the proxy appends
+ * to whatever the client sent, so its leftmost entries are the client's to choose, which would
+ * let a guesser rotate keys and a stranger lock a player out by naming their address. Without
+ * a trusted proxy, the socket's own address.
+ */
+export function clientKey(req: Pick<IncomingMessage, "headers" | "socket">, trustProxy: boolean): string {
+  const h = req.headers["fly-client-ip"];
+  const fly = (Array.isArray(h) ? h[0] : h ?? "").trim();
+  return (trustProxy && fly) || req.socket.remoteAddress || "?";
 }
 
 type Reply = (status: number, body: object, headers?: Record<string, string>) => void;
@@ -111,8 +119,10 @@ export type ServerOptions = {
   staticDir?: string; staticConnect?: string[];
   /** Heartbeat interval while a request is in flight; 0 (local) sends plain responses. */
   keepaliveMs?: number;
-  /** Count wrong codes against X-Forwarded-For's first address (behind a proxy that sets it). */
+  /** Count wrong codes against Fly-Client-IP (behind Fly's proxy, which sets it). */
   trustProxy?: boolean;
+  /** Production: serve only the listed hosts and origins, with no local allowance, and plain 403 texts. */
+  strict?: boolean;
 } & Pick<WorkshopOptions, "index" | "keys" | "build">;
 
 /**
@@ -129,7 +139,7 @@ export type ServerOptions = {
  */
 export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [], hosts = [], index = readIndex(), keys = readKeys(), build, queue = buildQueue,
   accessCode, dailyCap = DEFAULT_DAILY_CAP, stateDir, cap = new DailyCap(dailyCap, stateDir ? path.join(stateDir, "daily_cap.json") : undefined), throttle = new Throttle(), now: clock = Date.now,
-  staticDir, staticConnect = [], keepaliveMs = 0, trustProxy = false }: ServerOptions) {
+  staticDir, staticConnect = [], keepaliveMs = 0, trustProxy = false, strict = false }: ServerOptions) {
   const system = buildSystemPrompt({ index, keys });            // assembled once; the files it reads are part of the commit
   const systemSha256 = createHash("sha256").update(system).digest("hex");
   const facts = liveFactIds(index).length;
@@ -142,18 +152,25 @@ export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [],
   return createServer(async (req, res) => {
     const now = clock();
     const host = req.headers.host ?? "";
-    const hostOk = hostAllowed(host, hosts) && (req.headersDistinct.host?.length ?? 0) <= 1;
+    const hostOk = hostAllowed(host, hosts, strict) && (req.headersDistinct.host?.length ?? 0) <= 1;
     const origin = req.headers.origin;
-    const originOk = origin === undefined || originAllowed(origin, origins);
+    const originOk = origin === undefined || originAllowed(origin, origins, strict);
     const cors: Record<string, string> = origin === undefined || !originOk ? {} : { "access-control-allow-origin": origin, "vary": "origin", "access-control-allow-headers": "content-type, authorization", "access-control-allow-methods": "POST, GET, OPTIONS" };
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     const method = req.method ?? "GET";
     const presented = bearer(req.headers.authorization);
-    const authorized = open || codeMatches(presented, accessCode);
-    if (!hostOk) return send(res, 403, { error: `host "${host}" is not served; the workshop answers to localhost (WORKSHOP_HOSTS adds more)` });
-    if (!originOk) return send(res, 403, { error: `origin "${origin}" may not use the workshop; local pages only (WORKSHOP_ORIGINS adds more)` });
+    if (!hostOk) return send(res, 403, { error: strict ? "not served" : `host "${host}" is not served; the workshop answers to localhost (WORKSHOP_HOSTS adds more)` });
+    if (!originOk) return send(res, 403, { error: strict ? "not served" : `origin "${origin}" may not use the workshop; local pages only (WORKSHOP_ORIGINS adds more)` });
     if (method === "GET" && pathname === "/health") {
-      if (!authorized) return send(res, 200, { ok: true }, cors);                       // nothing a stranger can use
+      // a presented code goes through the same throttle as /workshop, so /health is no faster an oracle for it
+      let details = open;
+      if (!open && presented !== undefined) {
+        const key = clientKey(req, trustProxy);
+        if (throttle.blockedFor(key, now)) details = false;
+        else if (codeMatches(presented, accessCode)) details = true;
+        else throttle.record(key, now);
+      }
+      if (!details) return send(res, 200, { ok: true }, cors);                          // nothing a stranger can use
       return send(res, 200, { ok: true, model, facts, system_bytes: system.length, system_sha256: systemSha256, in_flight: admitted, building: queue.running, calls_today: cap.used, daily_cap: cap.cap }, cors);
     }
     try {
@@ -167,7 +184,7 @@ export function createWorkshopServer({ llm, model = DEFAULT_MODEL, origins = [],
         const key = clientKey(req, trustProxy);
         const wait = throttle.blockedFor(key, now);
         if (wait) return send(res, 429, { error: `too many wrong access codes from this address; try again in ${wait} s`, code: "throttled" }, { ...cors, "retry-after": String(wait) });
-        if (!authorized) {
+        if (!codeMatches(presented, accessCode)) {
           throttle.record(key, now);
           return send(res, 401, { error: presented === undefined ? "this workshop needs an access code" : "that access code was not accepted", code: "unauthorized" }, cors);
         }
@@ -206,7 +223,7 @@ export function loadEnv(root = ROOT) {
   if (existsSync(file)) process.loadEnvFile(file);              // values already in the environment win
 }
 
-export type EnvConfig = { bind: string; port: number; model: string; origins: string[]; hosts: string[]; accessCode?: string; dailyCap: number; stateDir?: string; keepaliveMs: number; staticDir?: string; staticConnect: string[]; trustProxy: boolean };
+export type EnvConfig = { bind: string; port: number; model: string; origins: string[]; hosts: string[]; accessCode?: string; dailyCap: number; stateDir?: string; keepaliveMs: number; staticDir?: string; staticConnect: string[]; trustProxy: boolean; strict: boolean };
 
 /**
  * The server's configuration from the environment (see .env.example). Refuses a listen
@@ -226,19 +243,21 @@ export function configFromEnv(env: Record<string, string | undefined> = process.
   const stateDir = env.WORKSHOP_STATE_DIR ? path.resolve(ROOT, env.WORKSHOP_STATE_DIR) : undefined;
   const staticConnect: string[] = [];
   for (const u of list(env.WORKSHOP_URL)) { try { staticConnect.push(new URL(u).origin); } catch { throw new Error(`WORKSHOP_URL is not a URL: ${u}`); } }
-  return { bind, port: Number(env.WORKSHOP_PORT) || DEFAULT_PORT, model: env.WORKSHOP_MODEL || DEFAULT_MODEL, origins: list(env.WORKSHOP_ORIGINS), hosts: list(env.WORKSHOP_HOSTS),
-    accessCode, dailyCap, stateDir, keepaliveMs, staticDir, staticConnect, trustProxy: env.WORKSHOP_TRUST_PROXY === "1" };
+  const origins = list(env.WORKSHOP_ORIGINS), hosts = list(env.WORKSHOP_HOSTS), strict = env.WORKSHOP_STRICT === "1";
+  if (strict && (!origins.length || !hosts.length)) throw new Error("WORKSHOP_STRICT=1 needs WORKSHOP_HOSTS and WORKSHOP_ORIGINS, or nothing would be served");
+  return { bind, port: Number(env.WORKSHOP_PORT) || DEFAULT_PORT, model: env.WORKSHOP_MODEL || DEFAULT_MODEL, origins, hosts,
+    accessCode, dailyCap, stateDir, keepaliveMs, staticDir, staticConnect, trustProxy: env.WORKSHOP_TRUST_PROXY === "1", strict };
 }
 
 export function main() {
   loadEnv();
   let cfg: EnvConfig, llm: Llm;
   try { cfg = configFromEnv(); llm = anthropicLlm({ model: cfg.model }); } catch (e) { console.error(`workshop: ${(e as Error).message}`); process.exit(2); }
-  const { bind, port, model, accessCode, dailyCap, stateDir, staticDir, keepaliveMs, ...rest } = cfg;
+  const { bind, port, model, accessCode, dailyCap, stateDir, staticDir, keepaliveMs, strict, hosts, ...rest } = cfg;
   let server: ReturnType<typeof createWorkshopServer>;
-  try { server = createWorkshopServer({ llm, model, accessCode, dailyCap, stateDir, staticDir, keepaliveMs, ...rest }); } catch (e) { console.error(`workshop: ${(e as Error).message}`); process.exit(2); }
+  try { server = createWorkshopServer({ llm, model, accessCode, dailyCap, stateDir, staticDir, keepaliveMs, strict, hosts, ...rest }); } catch (e) { console.error(`workshop: ${(e as Error).message}`); process.exit(2); }
   server.listen(port, bind, () => {
-    console.log(`workshop: listening on http://${bind}:${port} (model ${model}; access code ${accessCode ? "set" : "not set, local pages only"}; ${dailyCap} model calls a day, counted ${stateDir ? "in " + stateDir : "in memory"}; static ${staticDir ?? "off"}; keepalive ${keepaliveMs ? keepaliveMs / 1000 + " s" : "off"}; key from the environment, never sent to the page)`);
+    console.log(`workshop: listening on http://${bind}:${port} (model ${model}; access code ${accessCode ? "set" : "not set, local pages only"}; ${dailyCap} model calls a day, counted ${stateDir ? "in " + stateDir : "in memory"}; static ${staticDir ?? "off"}; keepalive ${keepaliveMs ? keepaliveMs / 1000 + " s" : "off"}; ${strict ? "only " + hosts.join(", ") : "local pages and " + (hosts.join(", ") || "no other host")}; key from the environment, never sent to the page)`);
   });
 }
 
