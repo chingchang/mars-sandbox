@@ -23,3 +23,35 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+
+  # Deploy from main once the tests are green, and only then. The owner adds FLY_API_TOKEN to the
+  # repository secrets (nothing deploys until it exists) and WORKSHOP_URL to the repository
+  # variables so the deployed site is checked afterwards without a key or a code.
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: deploy-production
+    env:
+      WORKSHOP_URL: ${{ vars.WORKSHOP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Is a deploy token set?
+        id: token
+        run: |
+          if [ "${{ secrets.FLY_API_TOKEN != '' }}" = "true" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "FLY_API_TOKEN is not set: nothing deployed"; fi
+      # pinned to the commit tagged 1.6 of superfly/flyctl-actions
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+        if: steps.token.outputs.present == 'true'
+      - name: Deploy (fly.toml, Dockerfile)
+        if: steps.token.outputs.present == 'true'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}   # the token reaches this step only
+        run: flyctl deploy --remote-only
+      - uses: actions/setup-node@v4
+        if: steps.token.outputs.present == 'true' && env.WORKSHOP_URL != ''
+        with:
+          node-version: 22
+      - name: Check the deployed site (no key, no code)
+        if: steps.token.outputs.present == 'true' && env.WORKSHOP_URL != ''
+        run: node scripts/deploy_check.mjs "$WORKSHOP_URL"
